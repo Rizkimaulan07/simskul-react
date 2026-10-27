@@ -1,0 +1,26 @@
+{
+  "name": "SIMSKUL — Sistem Informasi Manajemen Eskul",
+  "short_name": "SIMSKUL",
+  "description": "Kelola presensi, nilai, dokumentasi, dan perizinan ekstrakurikuler dalam satu tempat.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8faf9",
+  "theme_color": "#0d7a63",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
