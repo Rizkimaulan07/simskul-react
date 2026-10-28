@@ -3,8 +3,11 @@ import { create } from 'zustand'
 import { api, ApiError, apiErrorMessage } from './api'
 import type {
   AttendanceStatus,
+  Eskul,
+  EskulPatch,
   Grade,
   NewDocumentationInput,
+  NewEskulInput,
   NewPermitInput,
   NewSessionInput,
   NewStudentInput,
@@ -62,6 +65,9 @@ interface AppStore extends SeedData {
   completePermit: (permitId: string, actorId: string) => void
   addStudent: (input: NewStudentInput, actorId: string) => Student
   toggleStudentActive: (studentId: string, actorId: string) => void
+  createEskul: (input: NewEskulInput) => Promise<void>
+  updateEskul: (eskulId: string, patch: EskulPatch) => Promise<void>
+  deleteEskul: (eskulId: string) => Promise<void>
   createUser: (input: NewUserInput) => Promise<User>
   updateUser: (userId: string, patch: UserPatch) => Promise<User>
   setUserActive: (userId: string, active: boolean) => Promise<User>
@@ -438,6 +444,25 @@ export const useAppStore = create<AppStore>()((set, get) => ({
         active: !student.active,
       }),
     )
+  },
+
+  createEskul: async (input) => {
+    await api.post<{ eskul: Eskul }>('/eskul', input)
+    await get().refresh()
+    toast.success('Eskul berhasil ditambahkan', { description: input.name })
+  },
+
+  updateEskul: async (eskulId, patch) => {
+    await api.patch(`/eskul/${encodeURIComponent(eskulId)}`, patch)
+    await get().refresh()
+    const eskul = get().eskul.find((item) => item.id === eskulId)
+    toast.success('Data eskul diperbarui', { description: eskul?.name })
+  },
+
+  deleteEskul: async (eskulId) => {
+    await api.delete(`/eskul/${encodeURIComponent(eskulId)}`)
+    await get().refresh()
+    toast.success('Eskul berhasil dihapus')
   },
 
   createUser: async (input) => {

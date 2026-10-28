@@ -51,7 +51,7 @@ interface UserFormState {
   password: string
 }
 
-const roleOptions: Role[] = ['admin', 'wakasek', 'pelatih', 'ketua']
+const roleOptions: Role[] = ['admin', 'pelatih', 'ketua']
 
 function needsEskul(role: Role) {
   return role === 'pelatih' || role === 'ketua'
@@ -540,7 +540,7 @@ export function AdminPage() {
             <div>
               <p className="text-sm font-bold text-foreground">Database & pemeliharaan</p>
               <p className="mt-0.5 max-w-xl text-[11px] leading-relaxed text-muted-foreground">
-                SIMSKUL menggunakan SQLite di <code className="font-semibold">server/data/simskul.db</code>.
+                SIMSKUL terhubung ke PostgreSQL melalui variabel <code className="font-semibold">DATABASE_URL</code>.
                 Pemulihan data demo akan membuat ulang eskul, anggota, sesi, nilai, dokumentasi,
                 dan perizinan, tetapi tidak menghapus akun pengguna.
               </p>
@@ -778,11 +778,7 @@ function UserFields({
           <Field label="Cakupan akses" htmlFor="user-scope">
             <Input
               id="user-scope"
-              value={
-                form.role === 'admin'
-                  ? 'Administrasi sistem'
-                  : 'Seluruh eskul (kesiswaan)'
-              }
+              value="Administrasi sistem & seluruh eskul"
               readOnly
               className="bg-muted/40"
             />

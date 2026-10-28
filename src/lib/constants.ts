@@ -6,21 +6,29 @@ export const SEMESTER_OPTIONS = ['Ganjil 2026/2027', 'Genap 2025/2026', 'Ganjil 
 
 export const ACADEMIC_YEAR = '2026/2027'
 
-export const SCHOOL_NAME = 'SMA Negeri 1 Nusantara'
+export const SCHOOL_NAME = 'SMK BPPI'
 
 export const ROLE_LABELS: Record<Role, string> = {
   admin: 'Administrator',
   pelatih: 'Pelatih Eskul',
   ketua: 'Ketua Eskul',
-  wakasek: 'Wakasek Kesiswaan',
 }
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  admin: 'Kelola akun pengguna, hak akses, dan pemeliharaan data sistem.',
+  admin: 'Kelola seluruh eskul, akun pengguna, persetujuan izin, dan pemeliharaan data sistem.',
   pelatih: 'Kelola presensi, nilai, dokumentasi, dan perizinan eskul yang Anda bina.',
   ketua: 'Bantu pelatih mengelola eskul. Presensi terbuka saat pelatih berhalangan.',
-  wakasek: 'Pantau seluruh eskul, setujui perizinan, dan tinjau laporan kesiswaan.',
 }
+
+export const WEEKDAY_OPTIONS = [
+  'Senin',
+  'Selasa',
+  'Rabu',
+  'Kamis',
+  'Jumat',
+  'Sabtu',
+  'Minggu',
+] as const
 
 export const ATTENDANCE_META: Record<
   AttendanceStatus,
@@ -73,7 +81,7 @@ export const PERMIT_STATUS_META: Record<
     badge:
       'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/25',
     dot: 'bg-amber-500',
-    description: 'Menunggu keputusan Wakasek Kesiswaan',
+    description: 'Menunggu keputusan administrator',
   },
   disetujui: {
     label: 'Disetujui',

@@ -59,7 +59,7 @@ export function SessionDetailPage() {
     )
   }
 
-  if (user.role !== 'wakasek' && session.eskulId !== user.eskulId) {
+  if (user.role !== 'admin' && session.eskulId !== user.eskulId) {
     return <Navigate to="/sesi" replace />
   }
 
@@ -264,11 +264,11 @@ export function SessionDetailPage() {
               </div>
             ) : null}
 
-            {user.role === 'wakasek' ? (
+            {user.role === 'admin' ? (
               <div className="border-b border-violet-200/70 bg-violet-50/50 px-4 py-3 dark:border-violet-500/20 dark:bg-violet-500/[0.06]">
                 <p className="flex items-center gap-2 text-[11px] text-violet-900/75 dark:text-violet-100/70">
                   <ShieldCheck className="size-3.5" />
-                  Mode pantau wakasek. Anda dapat meninjau seluruh isian dan mengekspor rekap.
+                  Mode pantau administrator. Anda dapat meninjau seluruh isian dan mengekspor rekap.
                 </p>
               </div>
             ) : null}

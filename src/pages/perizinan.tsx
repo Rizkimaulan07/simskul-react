@@ -91,7 +91,7 @@ export function PermitsPage() {
   const canCreate = canSubmitPermit(user) && Boolean(user.eskulId)
   const canReview = canReviewPermits(user)
   const scopedPermits = store.permits
-    .filter((permit) => (user.role === 'wakasek' ? true : permit.eskulId === user.eskulId))
+    .filter((permit) => (user.role === 'admin' ? true : permit.eskulId === user.eskulId))
     .sort((a, b) => {
       if (a.status === 'diajukan' && b.status !== 'diajukan') return -1
       if (a.status !== 'diajukan' && b.status === 'diajukan') return 1
@@ -99,7 +99,7 @@ export function PermitsPage() {
     })
   const filteredPermits = scopedPermits
     .filter((permit) =>
-      user.role === 'wakasek' && eskulFilter !== 'semua'
+      user.role === 'admin' && eskulFilter !== 'semua'
         ? permit.eskulId === eskulFilter
         : true,
     )
@@ -165,7 +165,7 @@ export function PermitsPage() {
       createdBy: user.id,
     })
     toast.success('Pengajuan izin terkirim', {
-      description: 'Wakasek kesiswaan akan meninjau pengajuan Anda.',
+      description: 'Administrator akan meninjau pengajuan Anda.',
     })
     setAddOpen(false)
   }
@@ -213,7 +213,7 @@ export function PermitsPage() {
           label="Menunggu"
           value={statusCounts.diajukan}
           icon={Clock3}
-          hint={canReview ? 'Perlu keputusan Anda' : 'Menunggu wakasek'}
+          hint={canReview ? 'Perlu keputusan Anda' : 'Menunggu admin'}
           accent="amber"
         />
         <StatCard
@@ -510,7 +510,7 @@ export function PermitsPage() {
                   <div>
                     <p className="text-[11px] font-bold text-foreground">
                       {selectedPermit.status === 'diajukan'
-                        ? 'Menunggu keputusan wakasek'
+                        ? 'Menunggu keputusan administrator'
                         : selectedPermit.status === 'ditolak'
                           ? 'Ditolak'
                           : 'Disetujui'}
@@ -643,7 +643,7 @@ export function PermitsPage() {
               id="permit-location"
               value={form.location}
               onChange={(event) => setForm({ ...form, location: event.target.value })}
-              placeholder="Contoh: GOR Nusantara"
+              placeholder="Contoh: Aula SMK BPPI"
             />
           </Field>
           <Field label="Deskripsi kegiatan" htmlFor="permit-description" required>
@@ -655,7 +655,7 @@ export function PermitsPage() {
             />
           </Field>
           <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-3 text-[10px] leading-relaxed text-sky-900/70 dark:border-sky-500/20 dark:bg-sky-500/[0.06] dark:text-sky-100/70">
-            Pengajuan akan diteruskan ke Wakasek Kesiswaan. Anda dapat memantau status dan
+            Pengajuan akan diteruskan ke administrator sekolah. Anda dapat memantau status dan
             catatan keputusan pada halaman ini.
           </div>
         </form>

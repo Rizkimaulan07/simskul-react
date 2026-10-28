@@ -1,37 +1,84 @@
 # SIMSKUL
 
-**Sistem Informasi Manajemen Eskul** — aplikasi web untuk mengelola ekstrakurikuler sekolah: presensi, nilai, dokumentasi, perizinan, data anggota, dan laporan.
+**Sistem Informasi Manajemen Eskul** — aplikasi web fullstack untuk mengelola ekstrakurikuler sekolah: presensi, nilai, dokumentasi, perizinan, data anggota, laporan, dan manajemen data eskul.
 
-Aplikasi ini adalah **MVP frontend** yang menyimpan seluruh data demo di `localStorage` browser. Tidak ada server maupun autentikasi password; akun demo dipilih langsung dari halaman masuk.
+Data disimpan di **PostgreSQL** (bukan lagi localStorage). Backend berupa server HTTP Node.js yang menyajikan API JSON sekaligus hasil build frontend (folder `dist/`).
 
 ## Menjalankan
 
+### 1. Siapkan database PostgreSQL
+
+Pastikan PostgreSQL berjalan, lalu buat database dan user aplikasi, misalnya:
+
+```sql
+CREATE DATABASE simskul;
+CREATE ROLE simskul_app LOGIN PASSWORD '<password>';
+GRANT ALL PRIVILEGES ON DATABASE simskul TO simskul_app;
+```
+
+Saat pertama dijalankan pada database yang masih kosong, backend otomatis membuat seluruh tabel dan mengisi data demo (3 eskul, 6 akun, 22 anggota, sesi, nilai, dokumentasi, perizinan).
+
+### 2. Konfigurasi `.env`
+
+Buat file `.env` pada root proyek:
+
+```ini
+# Koneksi PostgreSQL
+DATABASE_URL=postgresql://simskul_app:<password>@localhost:5432/simskul
+
+# Kata sandi awal administrator (hanya dipakai saat seeding database kosong)
+SIMSKUL_ADMIN_PASSWORD=admin123
+
+# Kata sandi awal akun demo pelatih & ketua
+SIMSKUL_DEMO_PASSWORD=simskul123
+```
+
+File `.env` tidak ikut masuk repositori (sudah diatur di `.gitignore`).
+
+### 3. Instal & jalankan
+
 ```bash
 npm install
-npm run dev
+npm run dev      # backend :3001 + Vite (hot reload) sekaligus
 ```
 
 Buka alamat yang ditampilkan Vite (biasanya `http://localhost:5173`).
 
+Mode produksi:
+
+```bash
+npm run build    # type-check + build frontend ke dist/
+npm run start    # server Node menyajikan API + dist pada :3001
+```
+
 Perintah lain:
 
 ```bash
-npm run build    # type-check + build produksi
-npm run preview  # menjalankan hasil build
-npm run lint     # Oxlint
+npm run lint       # Oxlint
+npm run typecheck  # tsc untuk client & server
 ```
 
-## Akun demo
+## Akun demo (password `simskul123` kecuali admin)
 
-| Peran | Nama | Cakupan |
-| --- | --- | --- |
-| Pelatih Eskul | Budi Santoso, S.Pd. | Pramuka |
-| Ketua Eskul | Rani Puspita | Pramuka |
-| Wakasek Kesiswaan | Sari Wulandari, M.Pd. | Semua eskul |
+| Peran | Email | Nama | Cakupan |
+| --- | --- | --- | --- |
+| Admin | admin@simskul.sch.id | Admin Sekolah | Semua eskul |
+| Pelatih Eskul | budi@simskul.sch.id | Budi Santoso, S.Pd. | Pramuka |
+| Ketua Eskul | rani@simskul.sch.id | Rani Puspita | Pramuka |
 
-Data contoh mencakup 3 eskul (Pramuka, Futsal, Seni Tari), 22 anggota, sesi, nilai, dokumentasi, dan perizinan. Tanggal sesi dibuat relatif terhadap hari pertama data dimuat.
+Kata sandi admin dapat diatur lewat `SIMSKUL_ADMIN_PASSWORD` saat database masih kosong.
 
-## Fitur per peran
+## Peran & hak akses
+
+Sistem memakai **tiga peran**: `admin`, `pelatih`, `ketua`.
+
+**Admin** (sentral; menggantikan fungsi wakasek kesiswaan)
+- Melihat ringkasan seluruh eskul, tren kehadiran global, dan aktivitas terbaru.
+- **Mengelola data eskul**: menambah, mengedit, dan menghapus eskul — termasuk menunjuk pelatih dan ketua eskul.
+- Manajemen pengguna (tambah user, ubah peran, tentukan tugas eskul).
+- Menyetujui atau menolak perizinan dengan catatan keputusan.
+- Laporan kehadiran, nilai, dan perizinan; ekspor CSV dan cetak.
+- Galeri dokumentasi lintas eskul.
 
 **Pelatih**
 - Dashboard eskul, tren kehadiran, dan sesi terdekat.
@@ -44,15 +91,9 @@ Data contoh mencakup 3 eskul (Pramuka, Futsal, Seni Tari), 22 anggota, sesi, nil
 - Melihat dashboard, sesi, anggota, dokumentasi, dan perizinan eskulnya.
 - **Mengisi presensi hanya ketika pelatih menandai berhalangan.** Setiap isian diberi label “Pengganti” dan mencatat nama ketua sebagai pengisi.
 - Menambah anggota, mengunggah dokumentasi, dan mengajukan perizinan.
-- Tidak dapat mengubah nilai atau menyetujui perizinan.
+- Tidak dapat mengubah nilai.
 
-**Wakasek Kesiswaan**
-- Dashboard ringkasan seluruh eskul, tren kehadiran global, dan aktivitas terbaru.
-- Melihat profil dan performa tiap eskul, seluruh sesi, serta galeri dokumentasi lintas eskul.
-- Menyetujui atau menolak perizinan dengan catatan keputusan.
-- Laporan kehadiran, nilai, dan perizinan; ekspor CSV dan cetak.
-
-Hak akses dijaga di dua lapis: navigasi berbasis peran dan guard rute. Pelanggaran rute menampilkan halaman 403.
+Hak akses dijaga di tiga lapis: navigasi berbasis peran, guard rute (halaman 403), dan pemeriksaan peran di setiap endpoint API.
 
 ## Alur delegasi presensi
 
@@ -64,45 +105,44 @@ Hak akses dijaga di dua lapis: navigasi berbasis peran dan guard rute. Pelanggar
 
 ## Teknologi
 
-- React 19 + TypeScript
-- Vite 8 + Tailwind CSS v4
-- React Router 7 (`HashRouter`, cocok untuk hosting statis/PWA)
-- Zustand + `persist` (`localStorage`)
-- Recharts untuk grafik tren
-- Sonner untuk notifikasi
-- Komponen UI bergaya shadcn, dibuat manual dengan CVA dan Lucide
+- React 19 + TypeScript (Vite 8, Tailwind CSS v4)
+- React Router 7 (client-side routing)
+- Zustand untuk state klien; sumber kebenaran tetap **API server**
+- Backend HTTP Node.js (tanpa framework berat) di `server/`
+- Driver **node-postgres (`pg`) + PostgreSQL**
+- Recharts, Sonner, komponen UI bergaya shadcn (CVA + Lucide)
 
 ## Struktur utama
 
 ```text
-src/
-  App.tsx                 # rute, lazy loading, guard peran
+src/                       # frontend
+  App.tsx                  # rute, lazy loading, guard peran
   components/
-    layout/               # sidebar, topbar, shell responsif
-    sessions/             # baris sesi, dialog buat sesi
-    shared/               # badge, stat card, empty state, dll.
-    ui/                   # komponen dasar bergaya shadcn
+    eskul/                 # dialog tambah/edit/hapus eskul
+    layout/                # sidebar, topbar, shell responsif
+    sessions/              # baris sesi, dialog buat sesi
+    shared/ & ui/          # komponen dasar
   lib/
-    seed.ts               # data demo
-    store.ts              # Zustand: auth + seluruh mutasi
-    permissions.ts        # aturan izin per peran
-    selectors.ts          # agregasi presensi dan nilai
-  pages/                  # halaman per fitur
+    types.ts               # tipe domain (Role: admin|pelatih|ketua)
+    store.ts               # Zustand: auth + seluruh mutasi via API
+    permissions.ts         # aturan izin per peran
+  pages/                   # halaman per fitur
+server/                    # backend
+  index.ts                 # API JSON + penyajian dist/
+  db.ts                    # pool PostgreSQL, skema, seeding
+  security.ts              # hash kata sandi & sesi
+scripts/dev.mjs            # menjalankan server + Vite bersamaan
 ```
 
-## Reset data demo
+## Ringkasan salah satu fitur baru: kelola eskul (admin)
 
-Gunakan tombol **Pulihkan data demo** di halaman masuk. Data tersimpan dengan kunci `simskul-store-v1`; menghapus kunci tersebut dari `localStorage` juga akan mengembalikan kondisi awal.
+- **Tambah eskul** dari halaman Data Eskul: nama, deskripsi, jadwal (hari + jam), kuota, warna tampilan, penunjukan pelatih & ketua.
+- **Edit eskul** dari daftar atau detail; perubahan penunjukan otomatis menyinkronkan `eskul_id` pengguna terkait.
+- **Hapus eskul** dengan konfirmasi; tugas pelatih/ketua pada eskul tersebut dilepas.
 
-## Catatan produksi
+## Catatan
 
-MVP ini belum memiliki backend. Untuk penggunaan nyata, diperlukan:
-
-- Autentikasi dan otorisasi server-side (bukan hanya guard di klien).
-- Basis data relasional untuk pengguna, eskul, anggota, sesi, presensi, nilai, dokumentasi, dan perizinan.
-- Penyimpanan objek untuk foto dokumentasi (mis. S3/R2) beserta validasi dan kompresi gambar.
-- API audit log yang tidak dapat diubah klien, khususnya untuk isian pengganti dan keputusan perizinan.
-- Dukungan multi-tenant/multi-sekolah, pencadangan, serta kebijakan privasi data siswa.
+- Menjalankan `npm run start` membutuhkan `DATABASE_URL` yang valid; kesehatan koneksi dapat dicek di `GET /api/health`.
 
 ---
 

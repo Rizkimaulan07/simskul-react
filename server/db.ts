@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
+import pg from 'pg'
 import { createSeedData } from '../src/lib/seed.ts'
 import type {
   Activity,
@@ -24,29 +24,133 @@ import type {
 } from '../src/lib/types.ts'
 import { hashPassword } from './security.ts'
 
+interface QueryResult {
+  rows: Record<string, unknown>[]
+  rowCount: number | null
+}
+
+interface PgClient {
+  query(text: string, values?: unknown[]): Promise<QueryResult>
+}
+
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const dataDir = process.env.SIMSKUL_DATA_DIR
-  ? resolve(process.env.SIMSKUL_DATA_DIR)
-  : resolve(projectRoot, 'server', 'data')
 
-mkdirSync(dataDir, { recursive: true })
+/** Very small .env loader so DATABASE_URL can also be supplied via a file. */
+async function loadDotEnv() {
+  try {
+    const raw = await readFile(resolve(projectRoot, '.env'), 'utf8')
+    for (const line of raw.split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/)
+      if (!match) continue
+      const key = match[1]
+      let value = match[2] ?? ''
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1)
+      }
+      if (!(key in process.env)) process.env[key] = value
+    }
+  } catch {
+    // .env is optional.
+  }
+}
 
-export const dbPath = process.env.SIMSKUL_DB
-  ? resolve(process.env.SIMSKUL_DB)
-  : resolve(dataDir, 'simskul.db')
+await loadDotEnv()
 
-export const db = new DatabaseSync(dbPath)
-db.exec('PRAGMA journal_mode = WAL')
-db.exec('PRAGMA foreign_keys = ON')
-db.exec('PRAGMA busy_timeout = 5000')
+/** Parse PostgreSQL BIGINT (COUNT(*), etc.) as a JavaScript number. */
+pg.types.setTypeParser(20, (value: string) => Number.parseInt(value, 10))
 
-db.exec(`
+export const databaseUrl =
+  process.env.DATABASE_URL ?? 'postgresql://simskul_app:simskul0808@localhost:5432/simskul'
+
+export function databaseLabel() {
+  try {
+    const url = new URL(databaseUrl)
+    return `PostgreSQL ${url.hostname}:${url.port || '5432'}/${url.pathname.replace(/^\//, '')}`
+  } catch {
+    return 'PostgreSQL'
+  }
+}
+
+const pool = new pg.Pool({ connectionString: databaseUrl, max: 10 })
+
+/** Converts SQLite-style `?` placeholders into PostgreSQL `$1, $2, …`. */
+function toNativeSql(sql: string) {
+  const parts = sql.split('?')
+  let text = parts[0] ?? ''
+  for (let index = 1; index < parts.length; index += 1) {
+    text += `$${index}${parts[index]}`
+  }
+  return text
+}
+
+export class Executor {
+  private readonly client: PgClient
+
+  constructor(client: PgClient) {
+    this.client = client
+  }
+
+  prepare(sql: string) {
+    const text = toNativeSql(sql)
+    return {
+      get: async (...values: unknown[]) => {
+        const result = await this.client.query(text, values)
+        return result.rows[0] ?? undefined
+      },
+      all: async (...values: unknown[]) => {
+        const result = await this.client.query(text, values)
+        return result.rows
+      },
+      run: async (...values: unknown[]) => {
+        const result = await this.client.query(text, values)
+        return { rowCount: result.rowCount ?? 0 }
+      },
+    }
+  }
+
+  async exec(sql: string) {
+    await this.client.query(sql)
+  }
+}
+
+export const db = new Executor({
+  query: (text, values) =>
+    pool.query(text, values) as unknown as Promise<QueryResult>,
+})
+
+/** Runs `fn` inside a database transaction on a dedicated connection. */
+export async function transaction<T>(fn: (tx: Executor) => Promise<T>): Promise<T> {
+  const client = await pool.connect()
+  try {
+    const executor = new Executor(client as unknown as PgClient)
+    await executor.exec('BEGIN')
+    try {
+      const result = await fn(executor)
+      await executor.exec('COMMIT')
+      return result
+    } catch (error) {
+      await executor.exec('ROLLBACK').catch(() => undefined)
+      throw error
+    }
+  } finally {
+    client.release()
+  }
+}
+
+pool.on('error', (error) => {
+  console.error('[simskul] PostgreSQL pool error:', error.message)
+})
+
+const SCHEMA = `
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    email TEXT NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('admin', 'pelatih', 'ketua', 'wakasek')),
+    role TEXT NOT NULL CHECK (role IN ('admin', 'pelatih', 'ketua')),
     eskul_id TEXT,
     phone TEXT,
     active INTEGER NOT NULL DEFAULT 1,
@@ -56,6 +160,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS eskul (
     id TEXT PRIMARY KEY,
+    seq BIGSERIAL,
     name TEXT NOT NULL,
     short_name TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -71,7 +176,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS students (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    nis TEXT NOT NULL UNIQUE,
+    nis TEXT NOT NULL,
     class_name TEXT NOT NULL,
     gender TEXT NOT NULL CHECK (gender IN ('L', 'P')),
     eskul_id TEXT NOT NULL REFERENCES eskul(id) ON DELETE CASCADE,
@@ -162,13 +267,16 @@ db.exec(`
     expires_at TEXT NOT NULL
   );
 
-  CREATE INDEX IF NOT EXISTS idx_sessions_eskul ON sessions(eskul_id, date);
-  CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
-  CREATE INDEX IF NOT EXISTS idx_grades_student ON grades(student_id);
-  CREATE INDEX IF NOT EXISTS idx_permits_status ON permits(status);
-  CREATE INDEX IF NOT EXISTS idx_activities_at ON activities(at);
-  CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
-`)
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (lower(email));
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_students_nis_unique ON students (nis);
+  CREATE INDEX IF NOT EXISTS idx_students_eskul ON students (eskul_id);
+  CREATE INDEX IF NOT EXISTS idx_sessions_eskul ON sessions (eskul_id, date);
+  CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance (student_id);
+  CREATE INDEX IF NOT EXISTS idx_grades_student ON grades (student_id);
+  CREATE INDEX IF NOT EXISTS idx_permits_status ON permits (status);
+  CREATE INDEX IF NOT EXISTS idx_activities_at ON activities (at);
+  CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions (user_id);
+`
 
 interface UserRow {
   id: string
@@ -393,24 +501,50 @@ function toActivity(row: ActivityRow): Activity {
   }
 }
 
-export function getUserByEmail(email: string) {
-  return db
-    .prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE')
+let readyPromise: Promise<boolean> | null = null
+
+/** Ensures combined schema creation + seeding runs exactly once. */
+export function ready(): Promise<boolean> {
+  if (!readyPromise) {
+    readyPromise = (async () => {
+      await db.exec(SCHEMA)
+      return seedIfEmpty()
+    })().catch((error) => {
+      readyPromise = null
+      throw error
+    })
+  }
+  return readyPromise
+}
+
+/**
+ * Explicit pool shutdown used when the HTTP server closes.
+ */
+export async function closeDatabase() {
+  await pool.end()
+}
+
+export async function getUserByEmail(email: string) {
+  const row = await db
+    .prepare('SELECT * FROM users WHERE lower(email) = lower(?) LIMIT 1')
     .get(email) as unknown as UserRow | undefined
+  return row
 }
 
-export function getUserById(userId: string) {
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as unknown as
-    | UserRow
-    | undefined
+export async function getUserById(userId: string) {
+  const row = await db
+    .prepare('SELECT * FROM users WHERE id = ? LIMIT 1')
+    .get(userId) as unknown as UserRow | undefined
+  return row
 }
 
-export function getUserBySessionToken(tokenHash: string): User | null {
-  const row = db
+export async function getUserBySessionToken(tokenHash: string): Promise<User | null> {
+  const row = await db
     .prepare(
       `SELECT u.* FROM auth_sessions s
        JOIN users u ON u.id = s.user_id
-       WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1`,
+       WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1
+       LIMIT 1`,
     )
     .get(tokenHash, new Date().toISOString()) as unknown as UserRow | undefined
   return row ? toUser(row) : null
@@ -420,23 +554,28 @@ export function toPublicUser(row: UserRow): User {
   return toUser(row)
 }
 
-export function recordActivity(userId: string, action: string, detail: string) {
-  db.prepare('INSERT INTO activities (id, at, user_id, action, detail) VALUES (?, ?, ?, ?, ?)').run(
-    `act-${randomUUID()}`,
-    new Date().toISOString(),
-    userId,
-    action,
-    detail,
-  )
-  db.prepare(
-    `DELETE FROM activities WHERE id NOT IN (
-      SELECT id FROM activities ORDER BY at DESC LIMIT 100
-    )`,
-  ).run()
+export async function recordActivity(userId: string, action: string, detail: string) {
+  await db
+    .prepare('INSERT INTO activities (id, at, user_id, action, detail) VALUES (?, ?, ?, ?, ?)')
+    .run(`act-${randomUUID()}`, new Date().toISOString(), userId, action, detail)
+  await db
+    .prepare(
+      `DELETE FROM activities WHERE id NOT IN (
+        SELECT id FROM activities ORDER BY at DESC LIMIT 100
+      )`,
+    )
+    .run()
 }
 
-function insertUsers(seedUsers: User[]) {
-  const insert = db.prepare(
+interface ExecutorLike {
+  prepare(sql: string): {
+    run(...values: unknown[]): Promise<unknown>
+  }
+}
+
+async function insertUsers(seedUsers: User[], tx?: ExecutorLike) {
+  const store = tx ?? db
+  const insert = store.prepare(
     `INSERT INTO users
       (id, name, email, password_hash, role, eskul_id, phone, active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -447,7 +586,7 @@ function insertUsers(seedUsers: User[]) {
       user.role === 'admin'
         ? (process.env.SIMSKUL_ADMIN_PASSWORD ?? 'admin123')
         : (process.env.SIMSKUL_DEMO_PASSWORD ?? 'simskul123')
-    insert.run(
+    await insert.run(
       user.id,
       user.name,
       user.email,
@@ -462,14 +601,16 @@ function insertUsers(seedUsers: User[]) {
   }
 }
 
-function insertOperationalData(seed: SeedData) {
-  const insertEskul = db.prepare(
+async function insertOperationalData(seed: SeedData, tx?: ExecutorLike) {
+  const store = tx ?? db
+
+  const insertEskul = store.prepare(
     `INSERT INTO eskul
       (id, name, short_name, description, color, day, time, location, coach_id, leader_id, quota)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   for (const eskul of seed.eskul) {
-    insertEskul.run(
+    await insertEskul.run(
       eskul.id,
       eskul.name,
       eskul.shortName,
@@ -484,12 +625,12 @@ function insertOperationalData(seed: SeedData) {
     )
   }
 
-  const insertStudent = db.prepare(
+  const insertStudent = store.prepare(
     `INSERT INTO students (id, name, nis, class_name, gender, eskul_id, active, joined_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   for (const student of seed.students) {
-    insertStudent.run(
+    await insertStudent.run(
       student.id,
       student.name,
       student.nis,
@@ -501,18 +642,18 @@ function insertOperationalData(seed: SeedData) {
     )
   }
 
-  const insertSession = db.prepare(
+  const insertSession = store.prepare(
     `INSERT INTO sessions
       (id, eskul_id, date, start_time, end_time, location, topic, notes, coach_present, coach_note, created_by, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-  const insertAttendance = db.prepare(
+  const insertAttendance = store.prepare(
     `INSERT INTO attendance
       (session_id, student_id, status, note, updated_by, as_substitute, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
   for (const session of seed.sessions) {
-    insertSession.run(
+    await insertSession.run(
       session.id,
       session.eskulId,
       session.date,
@@ -527,7 +668,7 @@ function insertOperationalData(seed: SeedData) {
       session.createdAt,
     )
     for (const entry of session.attendance) {
-      insertAttendance.run(
+      await insertAttendance.run(
         session.id,
         entry.studentId,
         entry.status,
@@ -539,13 +680,13 @@ function insertOperationalData(seed: SeedData) {
     }
   }
 
-  const insertGrade = db.prepare(
+  const insertGrade = store.prepare(
     `INSERT INTO grades
       (id, student_id, semester, keaktifan, sikap, keterampilan, note, updated_by, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   for (const grade of seed.grades) {
-    insertGrade.run(
+    await insertGrade.run(
       grade.id,
       grade.studentId,
       grade.semester,
@@ -558,13 +699,13 @@ function insertOperationalData(seed: SeedData) {
     )
   }
 
-  const insertDocumentation = db.prepare(
+  const insertDocumentation = store.prepare(
     `INSERT INTO documentation
       (id, eskul_id, session_id, title, caption, image_url, date, uploaded_by, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   for (const doc of seed.documentation) {
-    insertDocumentation.run(
+    await insertDocumentation.run(
       doc.id,
       doc.eskulId,
       doc.sessionId ?? null,
@@ -577,13 +718,13 @@ function insertOperationalData(seed: SeedData) {
     )
   }
 
-  const insertPermit = db.prepare(
+  const insertPermit = store.prepare(
     `INSERT INTO permits
       (id, eskul_id, type, title, description, start_date, end_date, location, status, created_by, created_at, decided_by, decided_at, decision_note)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   for (const permit of seed.permits) {
-    insertPermit.run(
+    await insertPermit.run(
       permit.id,
       permit.eskulId,
       permit.type,
@@ -601,11 +742,11 @@ function insertOperationalData(seed: SeedData) {
     )
   }
 
-  const insertActivity = db.prepare(
+  const insertActivity = store.prepare(
     'INSERT INTO activities (id, at, user_id, action, detail) VALUES (?, ?, ?, ?, ?)',
   )
   for (const activity of seed.activities) {
-    insertActivity.run(
+    await insertActivity.run(
       activity.id,
       activity.at,
       activity.userId,
@@ -615,39 +756,45 @@ function insertOperationalData(seed: SeedData) {
   }
 }
 
-function seedDatabase() {
-  const existing = db.prepare('SELECT COUNT(*) AS total FROM users').get() as unknown as {
-    total: number
-  }
-  if (existing.total > 0) return false
+async function seedIfEmpty(): Promise<boolean> {
+  const existing = await db
+    .prepare('SELECT COUNT(*)::int AS total FROM users')
+    .get() as unknown as { total: number } | undefined
+  if ((existing?.total ?? 0) > 0) return false
 
   const seed = createSeedData()
-  db.exec('BEGIN')
-  try {
-    insertUsers(seed.users)
-    insertOperationalData(seed)
-    db.exec('COMMIT')
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
-  }
+  await transaction(async (tx) => {
+    await insertUsers(seed.users, tx)
+    await insertOperationalData(seed, tx)
+    return true
+  })
   return true
 }
 
-export const wasSeeded = seedDatabase()
+export async function readState(): Promise<SeedData> {
+  await ready()
 
-export function readState(): SeedData {
-  const users = (db.prepare('SELECT * FROM users ORDER BY name COLLATE NOCASE').all() as unknown as UserRow[]).map(toUser)
-  const eskul = (db.prepare('SELECT * FROM eskul ORDER BY rowid').all() as unknown as EskulRow[]).map(toEskul)
-  const students = (
-    db.prepare('SELECT * FROM students ORDER BY name COLLATE NOCASE').all() as unknown as StudentRow[]
-  ).map(toStudent)
-  const sessionRows = db
+  const userRows = await db
+    .prepare('SELECT * FROM users ORDER BY lower(name)')
+    .all() as unknown as UserRow[]
+  const users = userRows.map(toUser)
+
+  const eskulRows = await db
+    .prepare('SELECT * FROM eskul ORDER BY seq')
+    .all() as unknown as EskulRow[]
+  const eskul = eskulRows.map(toEskul)
+
+  const studentRows = await db
+    .prepare('SELECT * FROM students ORDER BY lower(name)')
+    .all() as unknown as StudentRow[]
+  const students = studentRows.map(toStudent)
+
+  const sessionRows = (await db
     .prepare('SELECT * FROM sessions ORDER BY date DESC, created_at DESC')
-    .all() as unknown as SessionRow[]
-  const attendanceRows = db
+    .all()) as unknown as SessionRow[]
+  const attendanceRows = (await db
     .prepare('SELECT * FROM attendance ORDER BY updated_at')
-    .all() as unknown as AttendanceRow[]
+    .all()) as unknown as AttendanceRow[]
   const attendanceBySession = new Map<string, AttendanceEntry[]>()
   for (const row of attendanceRows) {
     const entries = attendanceBySession.get(row.session_id) ?? []
@@ -669,25 +816,35 @@ export function readState(): SeedData {
     createdBy: row.created_by,
     createdAt: row.created_at,
   }))
-  const grades = (db.prepare('SELECT * FROM grades').all() as unknown as GradeRow[]).map(toGrade)
-  const documentation = (
-    db.prepare('SELECT * FROM documentation ORDER BY date DESC, created_at DESC').all() as unknown as DocumentationRow[]
-  ).map(toDocumentation)
-  const permits = (
-    db.prepare('SELECT * FROM permits ORDER BY created_at DESC').all() as unknown as PermitRow[]
-  ).map(toPermit)
-  const activities = (
-    db.prepare('SELECT * FROM activities ORDER BY at DESC LIMIT 100').all() as unknown as ActivityRow[]
-  ).map(toActivity)
+
+  const gradeRows = (await db
+    .prepare('SELECT * FROM grades')
+    .all()) as unknown as GradeRow[]
+  const grades = gradeRows.map(toGrade)
+
+  const documentationRows = (await db
+    .prepare('SELECT * FROM documentation ORDER BY date DESC, created_at DESC')
+    .all()) as unknown as DocumentationRow[]
+  const documentation = documentationRows.map(toDocumentation)
+
+  const permitRows = (await db
+    .prepare('SELECT * FROM permits ORDER BY created_at DESC')
+    .all()) as unknown as PermitRow[]
+  const permits = permitRows.map(toPermit)
+
+  const activityRows = (await db
+    .prepare('SELECT * FROM activities ORDER BY at DESC LIMIT 100')
+    .all()) as unknown as ActivityRow[]
+  const activities = activityRows.map(toActivity)
 
   return { users, eskul, students, sessions, grades, documentation, permits, activities }
 }
 
-export function resetDemoData(actorId: string) {
+export async function resetDemoData(actorId: string) {
+  await ready()
   const seed = createSeedData()
-  db.exec('BEGIN')
-  try {
-    db.exec(`
+  await transaction(async (tx) => {
+    await tx.exec(`
       DELETE FROM attendance;
       DELETE FROM grades;
       DELETE FROM documentation;
@@ -697,11 +854,8 @@ export function resetDemoData(actorId: string) {
       DELETE FROM students;
       DELETE FROM eskul;
     `)
-    insertOperationalData(seed)
-    db.exec('COMMIT')
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
-  }
+    await insertOperationalData(seed, tx)
+    return true
+  })
   recordActivity(actorId, 'Memulihkan data demo', 'Seluruh data eskul, anggota, dan sesi dibuat ulang')
 }

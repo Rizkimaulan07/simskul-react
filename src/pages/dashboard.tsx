@@ -74,7 +74,7 @@ function DashboardHeader({
   primarySessionId?: string
   isDelegated: boolean
 }) {
-  const isWakasek = user.role === 'wakasek'
+  const isSupervisor = user.role === 'admin'
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="min-w-0">
@@ -91,7 +91,7 @@ function DashboardHeader({
           <span className="ml-1.5 inline-block">👋</span>
         </h1>
         <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          {isWakasek
+          {isSupervisor
             ? 'Pantau kehadiran, perizinan, dan performa seluruh ekstrakurikuler dalam satu ringkasan.'
             : `Kelola kegiatan ${eskul?.name ?? 'eskul'} dan pastikan setiap sesi terdokumentasi dengan baik.`}
         </p>
@@ -104,7 +104,7 @@ function DashboardHeader({
           <CalendarCheck2 />
           Lihat Sesi
         </Link>
-        {isWakasek ? (
+        {isSupervisor ? (
           <Link to="/perizinan" className={buttonVariants()}>
             <ClipboardCheck />
             Tinjau Izin
@@ -338,7 +338,7 @@ export function DashboardPage() {
 
   if (!user) return null
 
-  const isWakasek = user.role === 'wakasek'
+  const isSupervisor = user.role === 'admin'
   const eskul = store.eskul.find((item) => item.id === user.eskulId)
   const userSessions = store.sessions
     .filter((session) => session.eskulId === user.eskulId)
@@ -359,7 +359,7 @@ export function DashboardPage() {
   const delegatedSessions = eskul ? getDelegatedSessions(userSessions, eskul.id) : []
   const nextSession = getNextSession(store.sessions, user.eskulId)
   const todaySession = userSessions.find((session) => session.date === todayISO())
-  const trend = getAttendanceTrend(isWakasek ? store.sessions : userSessions, undefined, 6)
+  const trend = getAttendanceTrend(isSupervisor ? store.sessions : userSessions, undefined, 6)
   const recentSessions = userSessions.filter((session) => session.attendance.length > 0).slice(0, 4)
   const coach = store.users.find((item) => item.id === eskul?.coachId)
   const leader = store.users.find((item) => item.id === eskul?.leaderId)
@@ -384,12 +384,12 @@ export function DashboardPage() {
       <DashboardHeader
         user={user}
         eskul={eskul}
-        pendingCount={isWakasek ? allPermitsPending : ownPendingPermits.length}
+        pendingCount={isSupervisor ? allPermitsPending : ownPendingPermits.length}
         primarySessionId={primarySessionId}
         isDelegated={user.role === 'ketua' && delegatedSessions.length > 0}
       />
 
-      {isWakasek ? (
+      {isSupervisor ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
@@ -641,7 +641,7 @@ export function DashboardPage() {
               label="Izin menunggu"
               value={ownPendingPermits.length}
               icon={ClipboardCheck}
-              hint="Menunggu persetujuan wakasek"
+              hint="Menunggu persetujuan admin"
               accent="amber"
             />
           </div>

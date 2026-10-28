@@ -46,7 +46,7 @@ export function ForbiddenPage() {
         Anda tidak memiliki akses
       </h1>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-        Peran Anda tidak diizinkan membuka halaman ini. Hubungi pelatih atau wakasek kesiswaan
+        Peran Anda tidak diizinkan membuka halaman ini. Hubungi administrator sekolah
         jika Anda merasa ini sebuah kekeliruan.
       </p>
       <Link to="/" className={cn(buttonVariants(), 'mt-6')}>

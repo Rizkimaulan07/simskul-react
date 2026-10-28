@@ -405,7 +405,7 @@ export function MembersPage() {
                 id="member-class"
                 value={form.className}
                 onChange={(event) => setForm({ ...form, className: event.target.value })}
-                placeholder="X IPA 1"
+                placeholder="Contoh: 10 PPLG 1"
               />
             </Field>
           </div>

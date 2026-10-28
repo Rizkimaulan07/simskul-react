@@ -67,9 +67,9 @@ export function DocumentationPage() {
   const eskul = store.eskul.find((item) => item.id === user.eskulId)
   const canUpload = canUploadDocumentation(user)
   const scopedDocs = store.documentation
-    .filter((doc) => (user.role === 'wakasek' ? true : doc.eskulId === user.eskulId))
+    .filter((doc) => (user.role === 'admin' ? true : doc.eskulId === user.eskulId))
     .filter((doc) =>
-      user.role === 'wakasek' && eskulFilter !== 'semua' ? doc.eskulId === eskulFilter : true,
+      user.role === 'admin' && eskulFilter !== 'semua' ? doc.eskulId === eskulFilter : true,
     )
     .sort((a, b) => b.date.localeCompare(a.date))
   const docs = scopedDocs.filter((doc) => {
@@ -121,7 +121,7 @@ export function DocumentationPage() {
         eyebrow={eskul ? `Galeri ${eskul.name}` : 'Galeri Kesiswaan'}
         title="Dokumentasi Kegiatan"
         description={
-          user.role === 'wakasek'
+          user.role === 'admin'
             ? 'Pantau dokumentasi kegiatan dari seluruh eskul dalam satu galeri.'
             : 'Simpan momen dan catatan kegiatan eskul agar mudah ditemukan kembali.'
         }
@@ -151,21 +151,21 @@ export function DocumentationPage() {
           accent="sky"
         />
         <StatCard
-          label={user.role === 'wakasek' ? 'Eskul tercakup' : 'Sesi terdokumentasi'}
+          label={user.role === 'admin' ? 'Eskul tercakup' : 'Sesi terdokumentasi'}
           value={
-            user.role === 'wakasek'
+            user.role === 'admin'
               ? coveredEskul
               : new Set(scopedDocs.map((doc) => doc.sessionId).filter(Boolean)).size
           }
           icon={GraduationCap}
-          hint={user.role === 'wakasek' ? `Dari ${store.eskul.length} eskul` : 'Terhubung ke sesi'}
+          hint={user.role === 'admin' ? `Dari ${store.eskul.length} eskul` : 'Terhubung ke sesi'}
           accent="violet"
         />
       </div>
 
       <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
-          {user.role === 'wakasek' ? (
+          {user.role === 'admin' ? (
             <Select
               value={eskulFilter}
               onChange={(event) => setEskulFilter(event.target.value)}

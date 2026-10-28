@@ -217,7 +217,7 @@ export function ReportsPage() {
           label="Izin menunggu"
           value={pendingCount}
           icon={ClipboardCheck}
-          hint="Perlu keputusan wakasek"
+          hint="Perlu keputusan admin"
           accent="amber"
         />
       </div>

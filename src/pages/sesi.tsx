@@ -42,11 +42,11 @@ export function SessionsPage() {
   const eskul = store.eskul.find((item) => item.id === user.eskulId)
   const baseSessions = store.sessions
     .filter((session) =>
-      user.role === 'wakasek' ? true : session.eskulId === user.eskulId,
+      user.role === 'admin' ? true : session.eskulId === user.eskulId,
     )
     .sort((a, b) => b.date.localeCompare(a.date))
   const scopedSessions =
-    user.role === 'wakasek' && eskulFilter !== 'semua'
+    user.role === 'admin' && eskulFilter !== 'semua'
       ? baseSessions.filter((session) => session.eskulId === eskulFilter)
       : baseSessions
   const today = todayISO()
@@ -87,7 +87,7 @@ export function SessionsPage() {
         eyebrow="Presensi & Kehadiran"
         title="Sesi & Presensi"
         description={
-          user.role === 'wakasek'
+          user.role === 'admin'
             ? 'Pantau seluruh sesi eskul dan rekap kehadiran anggota lintas ekstrakurikuler.'
             : user.role === 'ketua'
               ? `Pantau sesi ${eskul?.name ?? 'eskul'}. Anda dapat mengisi presensi saat pelatih berhalangan.`
@@ -147,7 +147,7 @@ export function SessionsPage() {
           label="Total sesi"
           value={baseSessions.length}
           icon={CalendarCheck2}
-          hint={user.role === 'wakasek' ? 'Seluruh eskul' : eskul?.name}
+          hint={user.role === 'admin' ? 'Seluruh eskul' : eskul?.name}
           accent="primary"
         />
         <StatCard
@@ -195,7 +195,7 @@ export function SessionsPage() {
                 { value: 'selesai', label: 'Selesai', count: pastCount },
               ]}
             />
-            {user.role === 'wakasek' ? (
+            {user.role === 'admin' ? (
               <Select
                 value={eskulFilter}
                 onChange={(event) => setEskulFilter(event.target.value)}
@@ -252,7 +252,7 @@ export function SessionsPage() {
                   eskul={sessionEskul}
                   coachName={coach?.name ?? 'Pelatih'}
                   canEdit={canEdit}
-                  showEskul={user.role === 'wakasek'}
+                  showEskul={user.role === 'admin'}
                   delegated={
                     user.role === 'ketua' &&
                     session.coachPresent === false &&

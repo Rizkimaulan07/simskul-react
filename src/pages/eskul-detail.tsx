@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   Images,
   MapPin,
+  Pencil,
   TrendingUp,
   Users,
 } from 'lucide-react'
@@ -14,7 +15,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { buttonVariants } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -23,8 +24,9 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { DocImage } from '@/components/shared/doc-image'
 import { CoachPresenceBadge, PermitStatusBadge } from '@/components/shared/badges'
 import { SessionRow } from '@/components/sessions/session-row'
+import { EskulFormDialog } from '@/components/eskul/eskul-form-dialog'
 import { StatCard } from '@/components/shared/stat-card'
-import { useAppStore } from '@/lib/store'
+import { useAppStore, useCurrentUser } from '@/lib/store'
 import {
   getActiveStudents,
   getEskulAttendance,
@@ -59,7 +61,9 @@ function PermitRow({ permit }: { permit: Permit }) {
 export function EskulDetailPage() {
   const { id } = useParams<{ id: string }>()
   const store = useAppStore()
+  const currentUser = useCurrentUser()
   const [tab, setTab] = useState<DetailTab>('ringkasan')
+  const [formOpen, setFormOpen] = useState(false)
 
   const eskul = store.eskul.find((item) => item.id === id)
 
@@ -197,8 +201,19 @@ export function EskulDetailPage() {
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-sm">Informasi Eskul</CardTitle>
+                {currentUser?.role === 'admin' ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFormOpen(true)}
+                    className="shrink-0"
+                  >
+                    <Pencil />
+                    Edit Eskul
+                  </Button>
+                ) : null}
               </CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -484,6 +499,15 @@ export function EskulDetailPage() {
             ))}
           </div>
         )
+      ) : null}
+
+      {formOpen ? (
+        <EskulFormDialog
+          open
+          onOpenChange={setFormOpen}
+          eskul={eskul}
+          users={store.users}
+        />
       ) : null}
     </div>
   )

@@ -32,8 +32,6 @@ const roleStyles: Record<Role, string> = {
     'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300',
   ketua:
     'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300',
-  wakasek:
-    'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-300',
 }
 
 export function RoleBadge({ role, className }: { role: Role; className?: string }) {

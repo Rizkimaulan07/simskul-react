@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'pelatih' | 'ketua' | 'wakasek'
+export type Role = 'admin' | 'pelatih' | 'ketua'
 
 export type EskulColor = 'emerald' | 'sky' | 'rose' | 'amber' | 'violet'
 
@@ -180,6 +180,21 @@ export interface NewUserInput {
   phone?: string
   password: string
 }
+
+export interface NewEskulInput {
+  name: string
+  shortName: string
+  description: string
+  color: EskulColor
+  day: string
+  time: string
+  location: string
+  quota: number
+  coachId?: string | null
+  leaderId?: string | null
+}
+
+export type EskulPatch = Partial<NewEskulInput>
 
 export interface UserPatch {
   name?: string

@@ -1,7 +1,7 @@
 {
-  "name": "SIMSKUL — Sistem Informasi Manajemen Eskul",
+  "name": "SIMSKUL — Manajemen Eskul SMK BPPI",
   "short_name": "SIMSKUL",
-  "description": "Kelola presensi, nilai, dokumentasi, dan perizinan ekstrakurikuler dalam satu tempat.",
+  "description": "Kelola presensi, nilai, dokumentasi, dan perizinan ekstrakurikuler SMK BPPI dalam satu tempat.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -11,15 +11,15 @@
   "lang": "id",
   "icons": [
     {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/favicon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ]

@@ -12,13 +12,13 @@ dist
 dist-ssr
 *.local
 
-# Local SQLite database
+# Local SQLite database (legacy)
 server/data/
 *.db
 *.db-shm
 *.db-wal
 
-# Environment overrides
+# Environment overrides (berisi kredensial database)
 .env
 .env.*
 

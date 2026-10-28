@@ -36,9 +36,13 @@ interface NavItem {
 
 const navByRole: Record<Role, NavItem[]> = {
   admin: [
-    { to: '/admin', label: 'Manajemen Pengguna', icon: UserCog },
+    { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/eskul', label: 'Data Eskul', icon: School },
+    { to: '/sesi', label: 'Sesi & Presensi', icon: CalendarCheck2 },
+    { to: '/perizinan', label: 'Persetujuan Izin', icon: ClipboardCheck },
     { to: '/laporan', label: 'Laporan & Nilai', icon: TrendingUp },
+    { to: '/dokumentasi', label: 'Galeri Eskul', icon: Images },
+    { to: '/admin', label: 'Manajemen Pengguna', icon: UserCog },
   ],
   pelatih: [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -54,14 +58,6 @@ const navByRole: Record<Role, NavItem[]> = {
     { to: '/anggota', label: 'Data Anggota', icon: Users },
     { to: '/dokumentasi', label: 'Dokumentasi', icon: Images },
     { to: '/perizinan', label: 'Perizinan', icon: ClipboardCheck },
-  ],
-  wakasek: [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-    { to: '/eskul', label: 'Data Eskul', icon: School },
-    { to: '/sesi', label: 'Sesi & Presensi', icon: CalendarCheck2 },
-    { to: '/perizinan', label: 'Persetujuan Izin', icon: ClipboardCheck },
-    { to: '/laporan', label: 'Laporan & Nilai', icon: TrendingUp },
-    { to: '/dokumentasi', label: 'Galeri Eskul', icon: Images },
   ],
 }
 
@@ -103,8 +99,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pendingCount = permits.filter(
     (permit) =>
       permit.status === 'diajukan' &&
-      user.role !== 'admin' &&
-      (user.role === 'wakasek' || permit.eskulId === user.eskulId),
+      (user.role === 'admin' || permit.eskulId === user.eskulId),
   ).length
 
   return (
@@ -212,7 +207,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               <LogOut />
             </Button>
           </div>
-          {user.role !== 'wakasek' && userEskul ? (
+          {user.role !== 'admin' && userEskul ? (
             <div className="mt-2.5 flex items-center justify-between border-t border-border/60 pt-2.5">
               <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 Eskul Anda
@@ -235,17 +230,17 @@ function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const title = getPageTitle(location.pathname)
 
   const pendingCount = useMemo(() => {
-    if (!user || user.role === 'admin') return 0
+    if (!user) return 0
     return permits.filter(
       (permit) =>
         permit.status === 'diajukan' &&
-        (user.role === 'wakasek' || permit.eskulId === user.eskulId),
+        (user.role === 'admin' || permit.eskulId === user.eskulId),
     ).length
   }, [permits, user])
 
   if (!user) return null
   const userEskul = eskul.find((item) => item.id === user.eskulId)
-  const notificationTarget = user.role === 'admin' ? '/admin' : '/perizinan'
+  const notificationTarget = '/perizinan'
 
   return (
     <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 backdrop-blur-xl print:hidden">
@@ -275,8 +270,8 @@ function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
           <Link
             to={notificationTarget}
             className="relative flex size-9 items-center justify-center rounded-xl border border-border/70 bg-card text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
-            aria-label={user.role === 'admin' ? 'Manajemen pengguna' : 'Notifikasi perizinan'}
-            title={user.role === 'admin' ? 'Manajemen pengguna' : 'Notifikasi perizinan'}
+            aria-label="Notifikasi perizinan"
+            title="Notifikasi perizinan"
           >
             <Bell className="size-[17px]" />
             {pendingCount > 0 ? (
@@ -308,7 +303,7 @@ function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
           <Link
             to={notificationTarget}
             className="sm:hidden"
-            aria-label={user.role === 'admin' ? 'Manajemen pengguna' : 'Profil dan notifikasi'}
+            aria-label="Profil dan notifikasi"
           >
             <Avatar name={user.name} id={user.id} size="sm" />
           </Link>
@@ -350,7 +345,7 @@ export function AppShell() {
             <span className="font-bold text-foreground">SIMSKUL</span> · Sistem Informasi Manajemen
             Eskul
           </p>
-          <span>Data tersimpan di database SQLite · server/data/simskul.db</span>
+          <span>Data tersimpan di database PostgreSQL (`simskul`)</span>
         </footer>
       </div>
     </div>

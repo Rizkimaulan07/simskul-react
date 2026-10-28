@@ -1,17 +1,18 @@
 import {
   ArrowRight,
+  Award,
   CalendarCheck2,
-  CheckCircle2,
   Database,
   Dumbbell,
   Eye,
   EyeOff,
+  FileText,
   GraduationCap,
+  Image,
   Loader2,
   LockKeyhole,
   Mail,
   Moon,
-  ShieldCheck,
   Sparkles,
   Sun,
   UserCog,
@@ -20,7 +21,6 @@ import {
 import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Logo } from '@/components/shared/brand'
@@ -48,11 +48,6 @@ const roleVisuals: Record<Role, { icon: typeof Dumbbell; className: string }> = 
     className:
       'bg-sky-50 text-sky-600 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20',
   },
-  wakasek: {
-    icon: ShieldCheck,
-    className:
-      'bg-violet-50 text-violet-600 ring-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/20',
-  },
 }
 
 const demoAccounts: {
@@ -67,14 +62,7 @@ const demoAccounts: {
     name: 'Administrator SIMSKUL',
     email: 'admin@simskul.sch.id',
     password: 'admin123',
-    description: 'Kelola pengguna, peran, dan data sistem',
-  },
-  {
-    role: 'wakasek',
-    name: 'Sari Wulandari, M.Pd.',
-    email: 'sari@simskul.sch.id',
-    password: 'simskul123',
-    description: 'Setujui izin dan pantau seluruh eskul',
+    description: 'Kelola eskul, pengguna, dan persetujuan izin',
   },
   {
     role: 'pelatih',
@@ -147,10 +135,6 @@ export function LoginPage() {
 
         <div className="relative z-10 flex items-center justify-between">
           <Logo inverted size="lg" subtitle="Sistem Informasi Manajemen Eskul" />
-          <Badge variant="dark" className="gap-1.5">
-            <Database className="size-3 text-amber-300" />
-            Database aktif
-          </Badge>
         </div>
 
         <div className="relative z-10 my-auto max-w-xl py-10">
@@ -166,15 +150,17 @@ export function LoginPage() {
             .
           </h1>
           <p className="mt-5 max-w-md text-sm leading-relaxed text-emerald-100/70">
-            Presensi, nilai, dokumentasi, dan perizinan kini tersimpan di database server.
-            Administrator dapat mengatur akun pengguna dan hak aksesnya.
+            Satu aplikasi untuk mengelola seluruh kegiatan ekstrakurikuler SMK BPPI — dari
+            presensi sesi, penilaian, dokumentasi, hingga laporan semester — agar kesiswaan
+            lebih tertib dan terdokumentasi.
           </p>
 
-          <div className="mt-9 grid max-w-md grid-cols-3 gap-3">
+          <div className="mt-9 grid max-w-md grid-cols-2 gap-3">
             {[
-              { value: '4', label: 'Peran pengguna' },
+              { value: '3', label: 'Peran pengguna' },
               { value: '3', label: 'Eskul aktif' },
-              { value: 'SQLite', label: 'Database' },
+              { value: '4', label: 'Jurusan' },
+              { value: '10–12', label: 'Tingkat kelas' },
             ].map((stat) => (
               <div
                 key={stat.label}
@@ -190,16 +176,46 @@ export function LoginPage() {
 
           <div className="mt-8 space-y-3">
             {[
-              'Sesi login aman dengan cookie HttpOnly dan kata sandi ter-hash',
-              'Administrator mengelola akun, peran, dan status pengguna',
-              'Data eskul, presensi, nilai, dan izin tersimpan permanen',
-            ].map((feature) => (
-              <div key={feature} className="flex items-center gap-3 text-sm text-emerald-50/85">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300">
-                  <CheckCircle2 className="size-3.5" />
-                </span>
-                {feature}
-              </div>
+              {
+                icon: CalendarCheck2,
+                text: 'Presensi sesi eskul dan delegasi otomatis ke ketua saat pelatih berhalangan',
+              },
+              {
+                icon: Award,
+                text: 'Penilaian keaktifan, sikap, dan keterampilan untuk tiap anggota',
+              },
+              {
+                icon: Image,
+                text: 'Dokumentasi kegiatan tersusun rapi dalam galeri per eskul',
+              },
+              {
+                icon: FileText,
+                text: 'Laporan kehadiran, nilai, dan perizinan siap diekspor',
+              },
+            ].map((feature) => {
+              const FeatureIcon = feature.icon
+              return (
+                <div key={feature.text} className="flex items-center gap-3 text-sm text-emerald-50/85">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300">
+                    <FeatureIcon className="size-3.5" />
+                  </span>
+                  {feature.text}
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="mt-8 flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-100/50">
+              Didukung untuk jurusan:
+            </span>
+            {['PPLG', 'TJKT', 'AKL', 'AXIO'].map((major) => (
+              <span
+                key={major}
+                className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[10px] font-bold tracking-wide text-white/80 backdrop-blur"
+              >
+                {major}
+              </span>
             ))}
           </div>
         </div>
@@ -355,7 +371,7 @@ export function LoginPage() {
           <div className="mt-7 flex items-center justify-between border-t border-border/70 pt-5 text-[11px] text-muted-foreground">
             <p className="flex items-center gap-1.5">
               <Database className="size-3.5 text-primary" />
-              Data tersimpan di database SQLite
+              Data tersimpan di database PostgreSQL
             </p>
             <span className="text-muted-foreground/60">SIMSKUL v1.1</span>
           </div>

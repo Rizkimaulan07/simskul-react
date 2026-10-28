@@ -1,15 +1,11 @@
 import type { Session, User } from './types'
 
-export function isWakasek(user: User) {
-  return user.role === 'wakasek'
-}
-
 export function isAdmin(user: User) {
   return user.role === 'admin'
 }
 
 export function canEditAttendance(user: User, session: Session) {
-  if (user.role === 'wakasek') return false
+  if (user.role === 'admin') return false
   if (session.eskulId !== user.eskulId) return false
   if (user.role === 'pelatih') return true
   return session.coachPresent === false
@@ -20,7 +16,7 @@ export function canScore(user: User) {
 }
 
 export function canReviewPermits(user: User) {
-  return user.role === 'wakasek'
+  return user.role === 'admin'
 }
 
 export function canCreateSession(user: User) {
@@ -40,7 +36,7 @@ export function canSubmitPermit(user: User) {
 }
 
 export function canViewAllEskul(user: User) {
-  return user.role === 'wakasek'
+  return user.role === 'admin'
 }
 
 export function canEditGrades(user: User) {

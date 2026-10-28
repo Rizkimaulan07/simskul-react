@@ -5,22 +5,26 @@ import { dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type {
   AttendanceStatus,
+  EskulColor,
   Gender,
   PermitType,
   Role,
   User,
 } from '../src/lib/types.ts'
+import { WEEKDAY_OPTIONS } from '../src/lib/constants.ts'
 import {
+  closeDatabase,
+  databaseLabel,
   db,
-  dbPath,
   getUserByEmail,
   getUserById,
   getUserBySessionToken,
+  ready,
   readState,
   recordActivity,
   resetDemoData,
   toPublicUser,
-  wasSeeded,
+  transaction,
 } from './db.ts'
 import {
   createSessionToken,
@@ -36,6 +40,8 @@ const sessionCookie = 'simskul_session'
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000
 const cookieSecure = process.env.SIMSKUL_COOKIE_SECURE === '1'
 const maxBodyBytes = 2 * 1024 * 1024
+
+const ESKUL_COLORS: EskulColor[] = ['emerald', 'sky', 'rose', 'amber', 'violet']
 
 class HttpError extends Error {
   status: number
@@ -88,15 +94,15 @@ function sessionCookieHeader(token: string, maxAgeSeconds: number) {
   return parts.join('; ')
 }
 
-function getSessionUser(req: IncomingMessage): User | null {
+async function getSessionUser(req: IncomingMessage): Promise<User | null> {
   const cookies = parseCookies(req.headers.cookie)
   const token = cookies[sessionCookie]
   if (!token) return null
   return getUserBySessionToken(hashToken(token))
 }
 
-function requireAuth(req: IncomingMessage): User {
-  const user = getSessionUser(req)
+async function requireAuth(req: IncomingMessage): Promise<User> {
+  const user = await getSessionUser(req)
   if (!user) throw new HttpError(401, 'Sesi tidak valid. Silakan masuk kembali.')
   return user
 }
@@ -193,7 +199,7 @@ function requirePassword(value: unknown) {
 }
 
 function parseRole(value: unknown): Role {
-  if (value === 'admin' || value === 'pelatih' || value === 'ketua' || value === 'wakasek') {
+  if (value === 'admin' || value === 'pelatih' || value === 'ketua') {
     return value
   }
   throw new HttpError(400, 'Peran pengguna tidak valid.')
@@ -233,6 +239,14 @@ function parseScore(value: unknown, label: string) {
   return Math.round(score)
 }
 
+function parseQuota(value: unknown, label: string) {
+  const quota = typeof value === 'number' ? value : Number(value)
+  if (!Number.isInteger(quota) || quota < 1 || quota > 999) {
+    throw new HttpError(400, `${label} harus berupa angka bulat antara 1 sampai 999.`)
+  }
+  return quota
+}
+
 function parseBoolean(value: unknown, label: string) {
   if (typeof value !== 'boolean') {
     throw new HttpError(400, `${label} harus berupa nilai boolean.`)
@@ -245,16 +259,16 @@ function safeId(value: unknown, prefix: string) {
   return `${prefix}-${randomUUID()}`
 }
 
-function eskulName(eskulId: string) {
-  const row = db.prepare('SELECT name FROM eskul WHERE id = ?').get(eskulId) as unknown as
-    | { name: string }
-    | undefined
+async function eskulName(eskulId: string) {
+  const row = await db
+    .prepare('SELECT name FROM eskul WHERE id = ? LIMIT 1')
+    .get(eskulId) as unknown as { name: string } | undefined
   return row?.name ?? 'Eskul'
 }
 
-function sessionMeta(sessionId: string) {
-  const row = db
-    .prepare('SELECT id, eskul_id, topic, coach_present FROM sessions WHERE id = ?')
+async function sessionMeta(sessionId: string) {
+  const row = await db
+    .prepare('SELECT id, eskul_id, topic, coach_present FROM sessions WHERE id = ? LIMIT 1')
     .get(sessionId) as unknown as
     | { id: string; eskul_id: string; topic: string; coach_present: number | null }
     | undefined
@@ -262,9 +276,9 @@ function sessionMeta(sessionId: string) {
   return row
 }
 
-function studentMeta(studentId: string) {
-  const row = db
-    .prepare('SELECT id, name, eskul_id, active FROM students WHERE id = ?')
+async function studentMeta(studentId: string) {
+  const row = await db
+    .prepare('SELECT id, name, eskul_id, active FROM students WHERE id = ? LIMIT 1')
     .get(studentId) as unknown as
     | { id: string; name: string; eskul_id: string; active: number }
     | undefined
@@ -272,43 +286,45 @@ function studentMeta(studentId: string) {
   return row
 }
 
-function ensureEskulExists(eskulId: string) {
-  const row = db.prepare('SELECT id FROM eskul WHERE id = ?').get(eskulId) as unknown as
-    | { id: string }
-    | undefined
+async function ensureEskulExists(eskulId: string) {
+  const row = await db
+    .prepare('SELECT id FROM eskul WHERE id = ? LIMIT 1')
+    .get(eskulId) as unknown as { id: string } | undefined
   if (!row) throw new HttpError(400, 'Eskul tidak ditemukan.')
   return row.id
 }
 
-function createSessionForUser(userId: string) {
+async function createSessionForUser(userId: string) {
   const token = createSessionToken()
   const now = new Date()
   const expires = new Date(now.getTime() + sessionTtlMs)
-  db.prepare('DELETE FROM auth_sessions WHERE expires_at <= ?').run(now.toISOString())
-  db.prepare(
-    'INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)',
-  ).run(hashToken(token), userId, now.toISOString(), expires.toISOString())
+  await db.prepare('DELETE FROM auth_sessions WHERE expires_at <= ?').run(now.toISOString())
+  await db
+    .prepare(
+      'INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)',
+    )
+    .run(hashToken(token), userId, now.toISOString(), expires.toISOString())
   return token
 }
 
-function publicUserById(userId: string): User {
-  const row = getUserById(userId)
+async function publicUserById(userId: string): Promise<User> {
+  const row = await getUserById(userId)
   if (!row) throw new HttpError(404, 'Pengguna tidak ditemukan.')
   return toPublicUser(row)
 }
 
-function emailInUse(email: string, exceptUserId?: string) {
-  const existing = getUserByEmail(email)
+async function emailInUse(email: string, exceptUserId?: string) {
+  const existing = await getUserByEmail(email)
   return Boolean(existing && existing.id !== exceptUserId)
 }
 
-function assertLastAdminRemains(userId: string, nextRole: Role, nextActive: boolean) {
-  const current = getUserById(userId)
+async function assertLastAdminRemains(userId: string, nextRole: Role, nextActive: boolean) {
+  const current = await getUserById(userId)
   if (!current || current.role !== 'admin') return
   if (nextRole === 'admin' && nextActive) return
-  const count = db
+  const count = await db
     .prepare(
-      "SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND active = 1 AND id <> ?",
+      "SELECT COUNT(*)::int AS total FROM users WHERE role = 'admin' AND active = 1 AND id <> ?",
     )
     .get(userId) as unknown as { total: number }
   if (count.total === 0) {
@@ -316,15 +332,91 @@ function assertLastAdminRemains(userId: string, nextRole: Role, nextActive: bool
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Eskul management helpers                                            */
+/* ------------------------------------------------------------------ */
+
+function parseEskulColor(value: unknown): EskulColor {
+  if (typeof value === 'string' && (ESKUL_COLORS as string[]).includes(value)) {
+    return value as EskulColor
+  }
+  throw new HttpError(400, 'Warna eskul tidak valid.')
+}
+
+function parseWeekday(value: unknown): string {
+  if (typeof value === 'string' && (WEEKDAY_OPTIONS as readonly string[]).includes(value)) {
+    return value
+  }
+  throw new HttpError(400, 'Hari latihan tidak valid.')
+}
+
+function optionalUserId(value: unknown, label: string): string | null {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') throw new HttpError(400, `${label} tidak valid.`)
+  return value
+}
+
+/** Clears an old pairing on another eskul without touching auth data. */
+async function detachUserFromOtherEskuls(userId: string, currentEskulId: string | null) {
+  await db.prepare(
+    'UPDATE eskul SET coach_id = NULL WHERE coach_id = ? AND id <> ?',
+  ).run(userId, currentEskulId ?? '')
+  await db.prepare(
+    'UPDATE eskul SET leader_id = NULL WHERE leader_id = ? AND id <> ?',
+  ).run(userId, currentEskulId ?? '')
+}
+
+async function resolveEskulPersons(body: Record<string, unknown>) {
+  const coachId = optionalUserId(body.coachId, 'Pelatih')
+  const leaderId = optionalUserId(body.leaderId, 'Ketua')
+  if (coachId) {
+    const coach = await getUserById(coachId)
+    if (!coach) throw new HttpError(400, 'Pelatih yang dipilih tidak ditemukan.')
+    if (coach.role !== 'pelatih') {
+      throw new HttpError(400, 'Pelatih harus memiliki peran Pelatih Eskul.')
+    }
+  }
+  if (leaderId) {
+    const leader = await getUserById(leaderId)
+    if (!leader) throw new HttpError(400, 'Ketua yang dipilih tidak ditemukan.')
+    if (leader.role !== 'ketua') {
+      throw new HttpError(400, 'Ketua eskul harus memiliki peran Ketua Eskul.')
+    }
+  }
+  return { coachId, leaderId }
+}
+
+/** Keeps `users.eskul_id` aligned with the eskul's coach/leader assignment. */
+async function syncAssignedUsers(eskulId: string, coachId: string | null, leaderId: string | null) {
+  if (coachId) {
+    await detachUserFromOtherEskuls(coachId, eskulId)
+    await db
+      .prepare('UPDATE users SET eskul_id = ?, updated_at = ? WHERE id = ?')
+      .run(eskulId, new Date().toISOString(), coachId)
+  }
+  if (leaderId) {
+    await detachUserFromOtherEskuls(leaderId, eskulId)
+    await db
+      .prepare('UPDATE users SET eskul_id = ?, updated_at = ? WHERE id = ?')
+      .run(eskulId, new Date().toISOString(), leaderId)
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* API routing                                                         */
+/* ------------------------------------------------------------------ */
+
 async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
+  await ready()
+
   const method = req.method ?? 'GET'
   const pathname = url.pathname
 
   if (method === 'GET' && pathname === '/api/health') {
     sendJson(res, 200, {
       ok: true,
-      database: 'sqlite',
-      seeded: wasSeeded,
+      database: 'postgresql',
+      connection: databaseLabel(),
       time: new Date().toISOString(),
     })
     return
@@ -334,11 +426,11 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const body = await readJson(req)
     const email = requireEmail(body.email)
     const password = requirePassword(body.password)
-    const row = getUserByEmail(email)
+    const row = await getUserByEmail(email)
     if (!row || !row.active || !verifyPassword(password, row.password_hash)) {
       throw new HttpError(401, 'Email atau kata sandi salah.')
     }
-    const token = createSessionForUser(row.id)
+    const token = await createSessionForUser(row.id)
     res.setHeader('Set-Cookie', sessionCookieHeader(token, Math.floor(sessionTtlMs / 1000)))
     sendJson(res, 200, { user: toPublicUser(row) })
     return
@@ -348,7 +440,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const cookies = parseCookies(req.headers.cookie)
     const token = cookies[sessionCookie]
     if (token) {
-      db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(hashToken(token))
+      await db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(hashToken(token))
     }
     res.setHeader('Set-Cookie', sessionCookieHeader('', 0))
     sendJson(res, 200, { ok: true })
@@ -356,23 +448,137 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
   }
 
   if (method === 'GET' && pathname === '/api/auth/me') {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     sendJson(res, 200, { user })
     return
   }
 
   if (method === 'GET' && pathname === '/api/bootstrap') {
-    const user = requireAuth(req)
-    sendJson(res, 200, { user, ...readState() })
+    const user = await requireAuth(req)
+    sendJson(res, 200, { user, ...(await readState()) })
     return
   }
 
+  /* ---------------------- Eskul management ------------------------ */
+
+  if (method === 'POST' && pathname === '/api/eskul') {
+    const actor = await requireAuth(req)
+    requireRole(actor, ['admin'])
+    const body = await readJson(req)
+    const name = requireText(body.name, 'Nama eskul', 200)
+    const shortName = requireText(body.shortName, 'Singkatan eskul', 10)
+    const description = requireText(body.description, 'Deskripsi eskul', 2000)
+    const color = parseEskulColor(body.color)
+    const day = parseWeekday(body.day)
+    const time = requireText(body.time, 'Jam latihan', 100)
+    const location = requireText(body.location, 'Lokasi latihan', 200)
+    const quota = parseQuota(body.quota, 'Kuota anggota')
+    const { coachId, leaderId } = await resolveEskulPersons(body)
+
+    const id = safeId(body.id, 'eskul')
+    await db
+      .prepare(
+        `INSERT INTO eskul
+          (id, name, short_name, description, color, day, time, location, coach_id, leader_id, quota)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, name, shortName, description, color, day, time, location, coachId, leaderId, quota)
+    await syncAssignedUsers(id, coachId, leaderId)
+    recordActivity(actor.id, 'Menambahkan eskul', `${name} · ${day} ${time}`)
+    sendJson(res, 201, { eskul: { id, name } })
+    return
+  }
+
+  const eskulPatchMatch = pathname.match(/^\/api\/eskul\/([^/]+)$/)
+  if (method === 'PATCH' && eskulPatchMatch) {
+    const actor = await requireAuth(req)
+    requireRole(actor, ['admin'])
+    const eskulId = decodeURIComponent(eskulPatchMatch[1])
+    const current = await db
+      .prepare('SELECT * FROM eskul WHERE id = ? LIMIT 1')
+      .get(eskulId) as unknown as
+      | {
+          id: string
+          name: string
+          short_name: string
+          description: string
+          color: EskulColor
+          day: string
+          time: string
+          location: string
+          coach_id: string | null
+          leader_id: string | null
+          quota: number
+        }
+      | undefined
+    if (!current) throw new HttpError(404, 'Eskul tidak ditemukan.')
+    const body = await readJson(req)
+    const name = 'name' in body ? requireText(body.name, 'Nama eskul', 200) : current.name
+    const shortName =
+      'shortName' in body ? requireText(body.shortName, 'Singkatan eskul', 10) : current.short_name
+    const description =
+      'description' in body
+        ? requireText(body.description, 'Deskripsi eskul', 2000)
+        : current.description
+    const color =
+      'color' in body ? parseEskulColor(body.color) : current.color
+    const day = 'day' in body ? parseWeekday(body.day) : current.day
+    const time = 'time' in body ? requireText(body.time, 'Jam latihan', 100) : current.time
+    const location =
+      'location' in body ? requireText(body.location, 'Lokasi latihan', 200) : current.location
+    const quota = 'quota' in body ? parseQuota(body.quota, 'Kuota anggota') : current.quota
+    const { coachId, leaderId } = await resolveEskulPersons(body)
+
+    await db
+      .prepare(
+        `UPDATE eskul
+         SET name = ?, short_name = ?, description = ?, color = ?, day = ?, time = ?,
+             location = ?, coach_id = ?, leader_id = ?, quota = ?
+         WHERE id = ?`,
+      )
+      .run(
+        name,
+        shortName,
+        description,
+        color,
+        day,
+        time,
+        location,
+        coachId,
+        leaderId,
+        quota,
+        eskulId,
+      )
+    await syncAssignedUsers(eskulId, coachId, leaderId)
+    recordActivity(actor.id, 'Memperbarui eskul', name)
+    sendJson(res, 200, { ok: true })
+    return
+  }
+
+  const eskulDeleteMatch = pathname.match(/^\/api\/eskul\/([^/]+)$/)
+  if (method === 'DELETE' && eskulDeleteMatch) {
+    const actor = await requireAuth(req)
+    requireRole(actor, ['admin'])
+    const eskulId = decodeURIComponent(eskulDeleteMatch[1])
+    const row = await db
+      .prepare('SELECT id, name FROM eskul WHERE id = ? LIMIT 1')
+      .get(eskulId) as unknown as { id: string; name: string } | undefined
+    if (!row) throw new HttpError(404, 'Eskul tidak ditemukan.')
+    await db.prepare('UPDATE users SET eskul_id = NULL WHERE eskul_id = ?').run(eskulId)
+    await db.prepare('DELETE FROM eskul WHERE id = ?').run(eskulId)
+    recordActivity(actor.id, 'Menghapus eskul', row.name)
+    sendJson(res, 200, { ok: true })
+    return
+  }
+
+  /* ---------------------- Sessions & attendance ------------------- */
+
   if (method === 'POST' && pathname === '/api/sessions') {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const body = await readJson(req)
     const eskulId = requireText(body.eskulId, 'Eskul', 100)
     assertEskulAccess(user, eskulId, ['pelatih'])
-    ensureEskulExists(eskulId)
+    await ensureEskulExists(eskulId)
     const topic = requireText(body.topic, 'Nama kegiatan', 200)
     const date = requireDate(body.date, 'Tanggal')
     const startTime = requireTime(body.startTime, 'Jam mulai')
@@ -384,12 +590,14 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const notes = optionalText(body.notes, 2000)
     const id = safeId(body.id, 'sesi')
     const now = new Date().toISOString()
-    db.prepare(
-      `INSERT INTO sessions
-        (id, eskul_id, date, start_time, end_time, location, topic, notes, coach_present, coach_note, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`,
-    ).run(id, eskulId, date, startTime, endTime, location, topic, notes ?? null, user.id, now)
-    recordActivity(user.id, 'Membuat sesi baru', `${eskulName(eskulId)} · ${topic}`)
+    await db
+      .prepare(
+        `INSERT INTO sessions
+          (id, eskul_id, date, start_time, end_time, location, topic, notes, coach_present, coach_note, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`,
+      )
+      .run(id, eskulId, date, startTime, endTime, location, topic, notes ?? null, user.id, now)
+    recordActivity(user.id, 'Membuat sesi baru', `${await eskulName(eskulId)} · ${topic}`)
     sendJson(res, 201, {
       session: {
         id,
@@ -411,20 +619,22 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
 
   const coachMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/coach-presence$/)
   if (method === 'PATCH' && coachMatch) {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const body = await readJson(req)
     const sessionId = decodeURIComponent(coachMatch[1])
-    const session = sessionMeta(sessionId)
+    const session = await sessionMeta(sessionId)
     assertEskulAccess(user, session.eskul_id, ['pelatih'])
     const present = parseBoolean(body.present, 'Kehadiran pelatih')
     const note = optionalText(body.note, 2000)
-    db.prepare(
-      'UPDATE sessions SET coach_present = ?, coach_note = COALESCE(?, coach_note) WHERE id = ?',
-    ).run(present ? 1 : 0, note ?? null, sessionId)
+    await db
+      .prepare(
+        'UPDATE sessions SET coach_present = ?, coach_note = COALESCE(?, coach_note) WHERE id = ?',
+      )
+      .run(present ? 1 : 0, note ?? null, sessionId)
     recordActivity(
       user.id,
       present ? 'Menandai pelatih hadir' : 'Menandai pelatih berhalangan',
-      `${eskulName(session.eskul_id)} · ${session.topic}${present ? '' : ' · presensi dialihkan ke ketua eskul'}`,
+      `${await eskulName(session.eskul_id)} · ${session.topic}${present ? '' : ' · presensi dialihkan ke ketua eskul'}`,
     )
     sendJson(res, 200, { ok: true })
     return
@@ -432,59 +642,55 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
 
   const markAllMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/attendance\/mark-all$/)
   if (method === 'POST' && markAllMatch) {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const sessionId = decodeURIComponent(markAllMatch[1])
-    const session = sessionMeta(sessionId)
+    const session = await sessionMeta(sessionId)
     assertEskulAccess(user, session.eskul_id, ['pelatih', 'ketua'])
     if (user.role === 'ketua' && session.coach_present !== 0) {
       throw new HttpError(403, 'Presensi baru dapat diisi ketua setelah pelatih berhalangan.')
     }
-    const students = db
+    const students = await db
       .prepare('SELECT id FROM students WHERE eskul_id = ? AND active = 1')
       .all(session.eskul_id) as unknown as { id: string }[]
     const now = new Date().toISOString()
     const asSubstitute = user.role === 'ketua' && session.coach_present === 0
-    const upsert = db.prepare(
-      `INSERT INTO attendance
-        (session_id, student_id, status, note, updated_by, as_substitute, updated_at)
-       VALUES (?, ?, 'hadir', NULL, ?, ?, ?)
-       ON CONFLICT(session_id, student_id) DO UPDATE SET
-         status = 'hadir',
-         updated_by = excluded.updated_by,
-         as_substitute = excluded.as_substitute,
-         updated_at = excluded.updated_at`,
-    )
-    db.exec('BEGIN')
-    try {
+    const count = await transaction(async (tx) => {
+      const upsert = tx.prepare(
+        `INSERT INTO attendance
+          (session_id, student_id, status, note, updated_by, as_substitute, updated_at)
+         VALUES (?, ?, 'hadir', NULL, ?, ?, ?)
+         ON CONFLICT(session_id, student_id) DO UPDATE SET
+           status = 'hadir',
+           updated_by = excluded.updated_by,
+           as_substitute = excluded.as_substitute,
+           updated_at = excluded.updated_at`,
+      )
       for (const student of students) {
-        upsert.run(sessionId, student.id, user.id, asSubstitute ? 1 : 0, now)
+        await upsert.run(sessionId, student.id, user.id, asSubstitute ? 1 : 0, now)
       }
-      db.exec('COMMIT')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      throw error
-    }
+      return students.length
+    })
     recordActivity(
       user.id,
       'Menandai semua hadir',
-      `${eskulName(session.eskul_id)} · ${session.topic} · ${students.length} anggota`,
+      `${await eskulName(session.eskul_id)} · ${session.topic} · ${count} anggota`,
     )
-    sendJson(res, 200, { ok: true, count: students.length })
+    sendJson(res, 200, { ok: true, count })
     return
   }
 
   const attendanceMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/attendance\/([^/]+)$/)
   if (method === 'PUT' && attendanceMatch) {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const body = await readJson(req)
     const sessionId = decodeURIComponent(attendanceMatch[1])
     const studentId = decodeURIComponent(attendanceMatch[2])
-    const session = sessionMeta(sessionId)
+    const session = await sessionMeta(sessionId)
     assertEskulAccess(user, session.eskul_id, ['pelatih', 'ketua'])
     if (user.role === 'ketua' && session.coach_present !== 0) {
       throw new HttpError(403, 'Presensi baru dapat diisi ketua setelah pelatih berhalangan.')
     }
-    const student = studentMeta(studentId)
+    const student = await studentMeta(studentId)
     if (student.eskul_id !== session.eskul_id) {
       throw new HttpError(400, 'Anggota tidak terdaftar pada eskul sesi ini.')
     }
@@ -492,31 +698,33 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const note = optionalText(body.note, 500)
     const asSubstitute = user.role === 'ketua' && session.coach_present === 0
     const now = new Date().toISOString()
-    db.prepare(
-      `INSERT INTO attendance
-        (session_id, student_id, status, note, updated_by, as_substitute, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(session_id, student_id) DO UPDATE SET
-         status = excluded.status,
-         note = excluded.note,
-         updated_by = excluded.updated_by,
-         as_substitute = excluded.as_substitute,
-         updated_at = excluded.updated_at`,
-    ).run(sessionId, studentId, status, note ?? null, user.id, asSubstitute ? 1 : 0, now)
+    await db
+      .prepare(
+        `INSERT INTO attendance
+          (session_id, student_id, status, note, updated_by, as_substitute, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(session_id, student_id) DO UPDATE SET
+           status = excluded.status,
+           note = excluded.note,
+           updated_by = excluded.updated_by,
+           as_substitute = excluded.as_substitute,
+           updated_at = excluded.updated_at`,
+      )
+      .run(sessionId, studentId, status, note ?? null, user.id, asSubstitute ? 1 : 0, now)
     sendJson(res, 200, { ok: true })
     return
   }
 
   const gradeMatch = pathname.match(/^\/api\/grades\/([^/]+)\/([^/]+)$/)
   if (method === 'PUT' && gradeMatch) {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const body = await readJson(req)
     const studentId = decodeURIComponent(gradeMatch[1])
     const semester = decodeURIComponent(gradeMatch[2])
-    const student = studentMeta(studentId)
+    const student = await studentMeta(studentId)
     assertEskulAccess(user, student.eskul_id, ['pelatih'])
-    const existing = db
-      .prepare('SELECT * FROM grades WHERE student_id = ? AND semester = ?')
+    const existing = await db
+      .prepare('SELECT * FROM grades WHERE student_id = ? AND semester = ? LIMIT 1')
       .get(studentId, semester) as unknown as
       | {
           id: string
@@ -538,18 +746,20 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       'note' in body ? optionalText(body.note, 2000) : (existing?.note ?? undefined)
     const id = existing?.id ?? safeId(body.id, 'grade')
     const now = new Date().toISOString()
-    db.prepare(
-      `INSERT INTO grades
-        (id, student_id, semester, keaktifan, sikap, keterampilan, note, updated_by, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(student_id, semester) DO UPDATE SET
-         keaktifan = excluded.keaktifan,
-         sikap = excluded.sikap,
-         keterampilan = excluded.keterampilan,
-         note = excluded.note,
-         updated_by = excluded.updated_by,
-         updated_at = excluded.updated_at`,
-    ).run(id, studentId, semester, keaktifan, sikap, keterampilan, note ?? null, user.id, now)
+    await db
+      .prepare(
+        `INSERT INTO grades
+          (id, student_id, semester, keaktifan, sikap, keterampilan, note, updated_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(student_id, semester) DO UPDATE SET
+           keaktifan = excluded.keaktifan,
+           sikap = excluded.sikap,
+           keterampilan = excluded.keterampilan,
+           note = excluded.note,
+           updated_by = excluded.updated_by,
+           updated_at = excluded.updated_at`,
+      )
+      .run(id, studentId, semester, keaktifan, sikap, keterampilan, note ?? null, user.id, now)
     sendJson(res, 200, {
       grade: {
         id,
@@ -567,30 +777,32 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
   }
 
   if (method === 'POST' && pathname === '/api/documentation') {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const body = await readJson(req)
     const eskulId = requireText(body.eskulId, 'Eskul', 100)
     assertEskulAccess(user, eskulId, ['pelatih', 'ketua'])
-    ensureEskulExists(eskulId)
+    await ensureEskulExists(eskulId)
     const title = requireText(body.title, 'Judul dokumentasi', 200)
     const caption = optionalText(body.caption, 3000) ?? ''
     const imageUrl = requireText(body.imageUrl, 'Gambar dokumentasi', 2000)
     const date = requireDate(body.date, 'Tanggal')
     const sessionId = optionalText(body.sessionId, 100)
     if (sessionId) {
-      const session = sessionMeta(sessionId)
+      const session = await sessionMeta(sessionId)
       if (session.eskul_id !== eskulId) {
         throw new HttpError(400, 'Sesi dokumentasi tidak berasal dari eskul yang sama.')
       }
     }
     const id = safeId(body.id, 'doc')
     const now = new Date().toISOString()
-    db.prepare(
-      `INSERT INTO documentation
-        (id, eskul_id, session_id, title, caption, image_url, date, uploaded_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, eskulId, sessionId ?? null, title, caption, imageUrl, date, user.id, now)
-    recordActivity(user.id, 'Mengunggah dokumentasi', `${eskulName(eskulId)} · ${title}`)
+    await db
+      .prepare(
+        `INSERT INTO documentation
+          (id, eskul_id, session_id, title, caption, image_url, date, uploaded_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, eskulId, sessionId ?? null, title, caption, imageUrl, date, user.id, now)
+    recordActivity(user.id, 'Mengunggah dokumentasi', `${await eskulName(eskulId)} · ${title}`)
     sendJson(res, 201, {
       documentation: {
         id,
@@ -609,31 +821,31 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
 
   const documentationMatch = pathname.match(/^\/api\/documentation\/([^/]+)$/)
   if (method === 'DELETE' && documentationMatch) {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const documentationId = decodeURIComponent(documentationMatch[1])
-    const doc = db
-      .prepare('SELECT id, eskul_id, title FROM documentation WHERE id = ?')
+    const doc = await db
+      .prepare('SELECT id, eskul_id, title FROM documentation WHERE id = ? LIMIT 1')
       .get(documentationId) as unknown as
       | { id: string; eskul_id: string; title: string }
       | undefined
     if (!doc) throw new HttpError(404, 'Dokumentasi tidak ditemukan.')
     assertEskulAccess(user, doc.eskul_id, ['pelatih', 'ketua'])
-    db.prepare('DELETE FROM documentation WHERE id = ?').run(documentationId)
+    await db.prepare('DELETE FROM documentation WHERE id = ?').run(documentationId)
     recordActivity(
       user.id,
       'Menghapus dokumentasi',
-      `${eskulName(doc.eskul_id)} · ${doc.title}`,
+      `${await eskulName(doc.eskul_id)} · ${doc.title}`,
     )
     sendJson(res, 200, { ok: true })
     return
   }
 
   if (method === 'POST' && pathname === '/api/permits') {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const body = await readJson(req)
     const eskulId = requireText(body.eskulId, 'Eskul', 100)
     assertEskulAccess(user, eskulId, ['pelatih', 'ketua'])
-    ensureEskulExists(eskulId)
+    await ensureEskulExists(eskulId)
     const type = parsePermitType(body.type)
     const title = requireText(body.title, 'Judul perizinan', 200)
     const description = requireText(body.description, 'Deskripsi', 3000)
@@ -645,12 +857,14 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const location = requireText(body.location, 'Lokasi', 200)
     const id = safeId(body.id, 'perm')
     const now = new Date().toISOString()
-    db.prepare(
-      `INSERT INTO permits
-        (id, eskul_id, type, title, description, start_date, end_date, location, status, created_by, created_at, decided_by, decided_at, decision_note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'diajukan', ?, ?, NULL, NULL, NULL)`,
-    ).run(id, eskulId, type, title, description, startDate, endDate, location, user.id, now)
-    recordActivity(user.id, 'Mengajukan perizinan', `${eskulName(eskulId)} · ${title}`)
+    await db
+      .prepare(
+        `INSERT INTO permits
+          (id, eskul_id, type, title, description, start_date, end_date, location, status, created_by, created_at, decided_by, decided_at, decision_note)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'diajukan', ?, ?, NULL, NULL, NULL)`,
+      )
+      .run(id, eskulId, type, title, description, startDate, endDate, location, user.id, now)
+    recordActivity(user.id, 'Mengajukan perizinan', `${await eskulName(eskulId)} · ${title}`)
     sendJson(res, 201, {
       permit: {
         id,
@@ -671,16 +885,16 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
 
   const permitReviewMatch = pathname.match(/^\/api\/permits\/([^/]+)\/review$/)
   if (method === 'PATCH' && permitReviewMatch) {
-    const user = requireAuth(req)
-    requireRole(user, ['wakasek', 'admin'])
+    const user = await requireAuth(req)
+    requireRole(user, ['admin'])
     const body = await readJson(req)
     const permitId = decodeURIComponent(permitReviewMatch[1])
     const decision = body.decision
     if (decision !== 'disetujui' && decision !== 'ditolak') {
       throw new HttpError(400, 'Keputusan perizinan tidak valid.')
     }
-    const permit = db
-      .prepare('SELECT id, eskul_id, title, status FROM permits WHERE id = ?')
+    const permit = await db
+      .prepare('SELECT id, eskul_id, title, status FROM permits WHERE id = ? LIMIT 1')
       .get(permitId) as unknown as
       | { id: string; eskul_id: string; title: string; status: string }
       | undefined
@@ -693,15 +907,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       throw new HttpError(400, 'Alasan penolakan wajib diisi.')
     }
     const now = new Date().toISOString()
-    db.prepare(
-      `UPDATE permits
-       SET status = ?, decided_by = ?, decided_at = ?, decision_note = ?
-       WHERE id = ?`,
-    ).run(decision, user.id, now, note || null, permitId)
+    await db
+      .prepare(
+        `UPDATE permits
+         SET status = ?, decided_by = ?, decided_at = ?, decision_note = ?
+         WHERE id = ?`,
+      )
+      .run(decision, user.id, now, note || null, permitId)
     recordActivity(
       user.id,
       decision === 'disetujui' ? 'Menyetujui perizinan' : 'Menolak perizinan',
-      `${eskulName(permit.eskul_id)} · ${permit.title}`,
+      `${await eskulName(permit.eskul_id)} · ${permit.title}`,
     )
     sendJson(res, 200, { ok: true })
     return
@@ -709,54 +925,56 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
 
   const permitCompleteMatch = pathname.match(/^\/api\/permits\/([^/]+)\/complete$/)
   if (method === 'PATCH' && permitCompleteMatch) {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const permitId = decodeURIComponent(permitCompleteMatch[1])
-    const permit = db
-      .prepare('SELECT id, eskul_id, title, status FROM permits WHERE id = ?')
+    const permit = await db
+      .prepare('SELECT id, eskul_id, title, status FROM permits WHERE id = ? LIMIT 1')
       .get(permitId) as unknown as
       | { id: string; eskul_id: string; title: string; status: string }
       | undefined
     if (!permit) throw new HttpError(404, 'Perizinan tidak ditemukan.')
-    if (user.role !== 'admin' && user.role !== 'wakasek' && user.eskulId !== permit.eskul_id) {
+    if (user.role !== 'admin' && user.eskulId !== permit.eskul_id) {
       throw new HttpError(403, 'Anda tidak memiliki akses ke perizinan ini.')
     }
     if (permit.status !== 'disetujui') {
       throw new HttpError(409, 'Hanya perizinan yang disetujui dapat ditandai selesai.')
     }
-    db.prepare("UPDATE permits SET status = 'selesai' WHERE id = ?").run(permitId)
+    await db.prepare("UPDATE permits SET status = 'selesai' WHERE id = ?").run(permitId)
     recordActivity(
       user.id,
       'Menandai kegiatan selesai',
-      `${eskulName(permit.eskul_id)} · ${permit.title}`,
+      `${await eskulName(permit.eskul_id)} · ${permit.title}`,
     )
     sendJson(res, 200, { ok: true })
     return
   }
 
   if (method === 'POST' && pathname === '/api/students') {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const body = await readJson(req)
     const eskulId = requireText(body.eskulId, 'Eskul', 100)
     assertEskulAccess(user, eskulId, ['pelatih', 'ketua'])
-    ensureEskulExists(eskulId)
+    await ensureEskulExists(eskulId)
     const name = requireText(body.name, 'Nama anggota', 200)
     const nis = requireText(body.nis, 'NIS', 50)
     const className = requireText(body.className, 'Kelas', 50)
     const gender = parseGender(body.gender)
-    const duplicate = db.prepare('SELECT id FROM students WHERE nis = ?').get(nis) as unknown as
-      | { id: string }
-      | undefined
+    const duplicate = await db
+      .prepare('SELECT id FROM students WHERE nis = ? LIMIT 1')
+      .get(nis) as unknown as { id: string } | undefined
     if (duplicate) throw new HttpError(409, 'NIS sudah terdaftar.')
     const id = safeId(body.id, 'st')
     const joinedAt =
       typeof body.joinedAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.joinedAt)
         ? body.joinedAt
         : new Date().toISOString().slice(0, 10)
-    db.prepare(
-      `INSERT INTO students (id, name, nis, class_name, gender, eskul_id, active, joined_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-    ).run(id, name, nis, className, gender, eskulId, joinedAt)
-    recordActivity(user.id, 'Menambahkan anggota', `${eskulName(eskulId)} · ${name}`)
+    await db
+      .prepare(
+        `INSERT INTO students (id, name, nis, class_name, gender, eskul_id, active, joined_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+      )
+      .run(id, name, nis, className, gender, eskulId, joinedAt)
+    recordActivity(user.id, 'Menambahkan anggota', `${await eskulName(eskulId)} · ${name}`)
     sendJson(res, 201, {
       student: { id, name, nis, className, gender, eskulId, active: true, joinedAt },
     })
@@ -765,13 +983,13 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
 
   const studentActiveMatch = pathname.match(/^\/api\/students\/([^/]+)\/active$/)
   if (method === 'PATCH' && studentActiveMatch) {
-    const user = requireAuth(req)
+    const user = await requireAuth(req)
     const body = await readJson(req)
     const studentId = decodeURIComponent(studentActiveMatch[1])
-    const student = studentMeta(studentId)
+    const student = await studentMeta(studentId)
     assertEskulAccess(user, student.eskul_id, ['pelatih', 'ketua'])
     const active = parseBoolean(body.active, 'Status anggota')
-    db.prepare('UPDATE students SET active = ? WHERE id = ?').run(active ? 1 : 0, studentId)
+    await db.prepare('UPDATE students SET active = ? WHERE id = ?').run(active ? 1 : 0, studentId)
     recordActivity(
       user.id,
       active ? 'Mengaktifkan anggota' : 'Menonaktifkan anggota',
@@ -782,7 +1000,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
   }
 
   if (method === 'POST' && pathname === '/api/admin/users') {
-    const actor = requireAuth(req)
+    const actor = await requireAuth(req)
     requireRole(actor, ['admin'])
     const body = await readJson(req)
     const name = requireText(body.name, 'Nama pengguna', 200)
@@ -790,40 +1008,42 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const password = requirePassword(body.password)
     const role = parseRole(body.role)
     const phone = optionalText(body.phone, 50)
-    if (emailInUse(email)) throw new HttpError(409, 'Email sudah digunakan pengguna lain.')
+    if (await emailInUse(email)) throw new HttpError(409, 'Email sudah digunakan pengguna lain.')
     let eskulId: string | undefined
     if (role === 'pelatih' || role === 'ketua') {
       eskulId = requireText(body.eskulId, 'Eskul', 100)
-      ensureEskulExists(eskulId)
+      await ensureEskulExists(eskulId)
     }
     const id = safeId(body.id, 'u')
     const now = new Date().toISOString()
-    db.prepare(
-      `INSERT INTO users
-        (id, name, email, password_hash, role, eskul_id, phone, active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-    ).run(
-      id,
-      name,
-      email,
-      hashPassword(password),
-      role,
-      eskulId ?? null,
-      phone ?? null,
-      now,
-      now,
-    )
+    await db
+      .prepare(
+        `INSERT INTO users
+          (id, name, email, password_hash, role, eskul_id, phone, active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(
+        id,
+        name,
+        email,
+        hashPassword(password),
+        role,
+        eskulId ?? null,
+        phone ?? null,
+        now,
+        now,
+      )
     recordActivity(actor.id, 'Menambahkan pengguna', `${name} · ${role}`)
-    sendJson(res, 201, { user: publicUserById(id) })
+    sendJson(res, 201, { user: await publicUserById(id) })
     return
   }
 
   const adminUserMatch = pathname.match(/^\/api\/admin\/users\/([^/]+)$/)
   if (method === 'PATCH' && adminUserMatch) {
-    const actor = requireAuth(req)
+    const actor = await requireAuth(req)
     requireRole(actor, ['admin'])
     const userId = decodeURIComponent(adminUserMatch[1])
-    const current = getUserById(userId)
+    const current = await getUserById(userId)
     if (!current) throw new HttpError(404, 'Pengguna tidak ditemukan.')
     const body = await readJson(req)
     const name = body.name === undefined ? current.name : requireText(body.name, 'Nama pengguna', 200)
@@ -841,46 +1061,46 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
           ? (current.eskul_id ?? null)
           : requireText(body.eskulId, 'Eskul', 100)
       if (!eskulId) throw new HttpError(400, 'Eskul wajib dipilih untuk peran ini.')
-      ensureEskulExists(eskulId)
+      await ensureEskulExists(eskulId)
     } else {
       eskulId = null
     }
-    if (emailInUse(email, userId)) {
+    if (await emailInUse(email, userId)) {
       throw new HttpError(409, 'Email sudah digunakan pengguna lain.')
     }
     if (userId === actor.id && (role !== 'admin' || !active)) {
       throw new HttpError(400, 'Anda tidak dapat menurunkan atau menonaktifkan akun sendiri.')
     }
-    assertLastAdminRemains(userId, role, active)
+    await assertLastAdminRemains(userId, role, active)
     const now = new Date().toISOString()
-    db.prepare(
-      `UPDATE users
-       SET name = ?, email = ?, role = ?, eskul_id = ?, phone = ?, active = ?, updated_at = ?
-       WHERE id = ?`,
-    ).run(name, email, role, eskulId, phone, active ? 1 : 0, now, userId)
+    await db
+      .prepare(
+        `UPDATE users
+         SET name = ?, email = ?, role = ?, eskul_id = ?, phone = ?, active = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(name, email, role, eskulId, phone, active ? 1 : 0, now, userId)
     if (!active) {
-      db.prepare('DELETE FROM auth_sessions WHERE user_id = ?').run(userId)
+      await db.prepare('DELETE FROM auth_sessions WHERE user_id = ?').run(userId)
     }
     recordActivity(actor.id, 'Memperbarui pengguna', `${name} · ${role}`)
-    sendJson(res, 200, { user: publicUserById(userId) })
+    sendJson(res, 200, { user: await publicUserById(userId) })
     return
   }
 
   const adminPasswordMatch = pathname.match(/^\/api\/admin\/users\/([^/]+)\/password$/)
   if (method === 'POST' && adminPasswordMatch) {
-    const actor = requireAuth(req)
+    const actor = await requireAuth(req)
     requireRole(actor, ['admin'])
     const userId = decodeURIComponent(adminPasswordMatch[1])
-    if (!getUserById(userId)) throw new HttpError(404, 'Pengguna tidak ditemukan.')
+    if (!(await getUserById(userId))) throw new HttpError(404, 'Pengguna tidak ditemukan.')
     const body = await readJson(req)
     const password = requirePassword(body.password)
-    db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').run(
-      hashPassword(password),
-      new Date().toISOString(),
-      userId,
-    )
+    await db
+      .prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+      .run(hashPassword(password), new Date().toISOString(), userId)
     if (userId !== actor.id) {
-      db.prepare('DELETE FROM auth_sessions WHERE user_id = ?').run(userId)
+      await db.prepare('DELETE FROM auth_sessions WHERE user_id = ?').run(userId)
     }
     recordActivity(actor.id, 'Mereset kata sandi', `Pengguna ${userId}`)
     sendJson(res, 200, { ok: true })
@@ -888,9 +1108,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
   }
 
   if (method === 'POST' && pathname === '/api/admin/reset-data') {
-    const actor = requireAuth(req)
+    const actor = await requireAuth(req)
     requireRole(actor, ['admin'])
-    resetDemoData(actor.id)
+    await resetDemoData(actor.id)
     sendJson(res, 200, { ok: true })
     return
   }
@@ -975,47 +1195,56 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse, url: URL) 
   }
 }
 
-const server = createServer(async (req, res) => {
-  setSecurityHeaders(res)
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
-  try {
-    if (url.pathname.startsWith('/api/')) {
-      await handleApi(req, res, url)
-      return
-    }
-    await serveStatic(req, res, url)
-  } catch (error) {
-    if (res.headersSent) {
-      res.end()
-      return
-    }
-    if (error instanceof HttpError) {
-      sendJson(res, error.status, { error: error.message })
-      return
-    }
-    console.error('[simskul] unhandled error:', error)
-    sendJson(res, 500, { error: 'Terjadi kesalahan pada server.' })
-  }
-})
+async function main() {
+  const wasSeeded = await ready()
 
-server.listen(port, () => {
-  const passwordHint =
-    process.env.SIMSKUL_ADMIN_PASSWORD || process.env.SIMSKUL_DEMO_PASSWORD
-      ? 'kata sandi mengikuti variabel lingkungan'
-      : 'admin: admin123 · demo: simskul123'
-  console.log(`[simskul] API + web server berjalan di http://localhost:${port}`)
-  console.log(`[simskul] Database SQLite: ${dbPath}`)
-  console.log(`[simskul] Akun awal — ${passwordHint}`)
-  if (wasSeeded) console.log('[simskul] Database baru diisi dengan data demo.')
-})
-
-function shutdown() {
-  server.close(() => {
-    db.close()
-    process.exit(0)
+  const server = createServer(async (req, res) => {
+    setSecurityHeaders(res)
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+    try {
+      if (url.pathname.startsWith('/api/')) {
+        await handleApi(req, res, url)
+        return
+      }
+      await serveStatic(req, res, url)
+    } catch (error) {
+      if (res.headersSent) {
+        res.end()
+        return
+      }
+      if (error instanceof HttpError) {
+        sendJson(res, error.status, { error: error.message })
+        return
+      }
+      console.error('[simskul] unhandled error:', error)
+      sendJson(res, 500, { error: 'Terjadi kesalahan pada server.' })
+    }
   })
-  setTimeout(() => process.exit(0), 3000).unref()
+
+  server.listen(port, () => {
+    const passwordHint =
+      process.env.SIMSKUL_ADMIN_PASSWORD || process.env.SIMSKUL_DEMO_PASSWORD
+        ? 'kata sandi mengikuti variabel lingkungan'
+        : 'admin: admin123 · demo: simskul123'
+    console.log(`[simskul] API + web server berjalan di http://localhost:${port}`)
+    console.log(`[simskul] Database: ${databaseLabel()}`)
+    console.log(`[simskul] Akun awal — ${passwordHint}`)
+    if (wasSeeded) console.log('[simskul] Database baru diisi dengan data demo.')
+  })
+
+  function shutdown() {
+    server.close(() => {
+      closeDatabase()
+      process.exit(0)
+    })
+    setTimeout(() => process.exit(0), 3000).unref()
+  }
+
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
 }
 
-process.on('SIGINT', shutdown)
-process.on('SIGTERM', shutdown)
+main().catch((error) => {
+  console.error('[simskul] Server gagal dimulai:', error)
+  process.exit(1)
+})

@@ -4,15 +4,17 @@ import {
   CalendarDays,
   Clock3,
   MapPin,
-  Search,
+  Pencil,
   School,
+  Search,
+  Trash2,
   TrendingUp,
   Users,
 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
-import { buttonVariants } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
@@ -20,14 +22,20 @@ import { Avatar } from '@/components/ui/avatar'
 import { EmptyState } from '@/components/shared/empty-state'
 import { PageHeader } from '@/components/shared/page-header'
 import { StatCard } from '@/components/shared/stat-card'
-import { useAppStore } from '@/lib/store'
+import { EskulDeleteDialog, EskulFormDialog } from '@/components/eskul/eskul-form-dialog'
+import { useAppStore, useCurrentUser } from '@/lib/store'
 import { getAllAttendance, getEskulAttendance } from '@/lib/selectors'
 import { eskulThemes } from '@/lib/theme'
+import type { Eskul } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export function EskulListPage() {
   const store = useAppStore()
+  const currentUser = useCurrentUser()
   const [search, setSearch] = useState('')
+  const [formOpen, setFormOpen] = useState(false)
+  const [editingEskul, setEditingEskul] = useState<Eskul | null>(null)
+  const [deletingEskul, setDeletingEskul] = useState<Eskul | null>(null)
 
   const totalMembers = store.students.filter((student) => student.active).length
   const totalSessions = store.sessions.length
@@ -45,19 +53,31 @@ export function EskulListPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Pemantauan Kesiswaan"
+        eyebrow="Administrasi Kesiswaan"
         title="Data Eskul"
-        description="Lihat profil setiap ekstrakurikuler, pembina, anggota, serta performa kehadirannya."
+        description="Kelola profil setiap ekstrakurikuler, pembina, anggota, serta performa kehadirannya."
         actions={
-          <div className="relative w-full sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Cari eskul..."
-              className="h-10 pl-9 text-xs"
-              aria-label="Cari eskul"
-            />
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <div className="relative w-full sm:w-64">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Cari eskul..."
+                className="h-10 pl-9 text-xs"
+                aria-label="Cari eskul"
+              />
+            </div>
+            <Button
+              onClick={() => {
+                setEditingEskul(null)
+                setFormOpen(true)
+              }}
+              className="shrink-0"
+            >
+              <School />
+              Tambah Eskul
+            </Button>
           </div>
         }
       />
@@ -97,7 +117,19 @@ export function EskulListPage() {
         <EmptyState
           icon={School}
           title="Eskul tidak ditemukan"
-          description="Coba kata kunci lain untuk menemukan ekstrakurikuler."
+          description={
+            store.eskul.length === 0
+              ? 'Belum ada eskul terdaftar. Tambahkan eskul pertama untuk memulai.'
+              : 'Coba kata kunci lain untuk menemukan ekstrakurikuler.'
+          }
+          action={
+            store.eskul.length === 0 ? (
+              <Button size="sm" onClick={() => setFormOpen(true)}>
+                <School />
+                Tambah Eskul
+              </Button>
+            ) : undefined
+          }
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -179,22 +211,71 @@ export function EskulListPage() {
                           : 'bg-rose-500'
                     }
                   />
-                  <Link
-                    to={`/eskul/${eskul.id}`}
-                    className={cn(
-                      buttonVariants({ variant: 'outline', size: 'sm' }),
-                      'w-full justify-between bg-card group-hover:border-primary/25 group-hover:text-primary',
-                    )}
-                  >
-                    Lihat profil eskul
-                    <ArrowRight />
-                  </Link>
+                  <div className="flex gap-1.5">
+                    <Link
+                      to={`/eskul/${eskul.id}`}
+                      className={cn(
+                        buttonVariants({ variant: 'outline', size: 'sm' }),
+                        'flex-1 justify-between bg-card group-hover:border-primary/25 group-hover:text-primary',
+                      )}
+                    >
+                      Lihat profil eskul
+                      <ArrowRight />
+                    </Link>
+                    {currentUser?.role === 'admin' ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="iconSm"
+                          className="shrink-0"
+                          title="Edit eskul"
+                          aria-label={`Edit ${eskul.name}`}
+                          onClick={() => {
+                            setEditingEskul(eskul)
+                            setFormOpen(true)
+                          }}
+                        >
+                          <Pencil />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="iconSm"
+                          className="shrink-0 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10"
+                          title="Hapus eskul"
+                          aria-label={`Hapus ${eskul.name}`}
+                          onClick={() => setDeletingEskul(eskul)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
                 </CardContent>
               </Card>
             )
           })}
         </div>
       )}
+
+      {formOpen ? (
+        <EskulFormDialog
+          open
+          onOpenChange={setFormOpen}
+          eskul={editingEskul ?? undefined}
+          users={store.users}
+        />
+      ) : null}
+      {deletingEskul ? (
+        <EskulDeleteDialog
+          eskul={deletingEskul}
+          memberCount={
+            store.students.filter(
+              (student) => student.eskulId === deletingEskul.id && student.active,
+            ).length
+          }
+          onClose={() => setDeletingEskul(null)}
+        />
+      ) : null}
     </div>
   )
 }

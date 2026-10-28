@@ -130,8 +130,6 @@ function RequireRole({ roles, children }: { roles: Role[]; children: ReactNode }
 }
 
 function HomeRoute() {
-  const user = useCurrentUser()
-  if (user?.role === 'admin') return <Navigate to="/admin" replace />
   return (
     <SuspendedPage>
       <DashboardPage />
@@ -163,7 +161,7 @@ function AppRoutes() {
         <Route
           path="sesi"
           element={
-            <RequireRole roles={['pelatih', 'ketua', 'wakasek']}>
+            <RequireRole roles={['pelatih', 'ketua', 'admin']}>
               <SuspendedPage>
                 <SessionsPage />
               </SuspendedPage>
@@ -173,7 +171,7 @@ function AppRoutes() {
         <Route
           path="sesi/:id"
           element={
-            <RequireRole roles={['pelatih', 'ketua', 'wakasek']}>
+            <RequireRole roles={['pelatih', 'ketua', 'admin']}>
               <SuspendedPage>
                 <SessionDetailPage />
               </SuspendedPage>
@@ -203,7 +201,7 @@ function AppRoutes() {
         <Route
           path="dokumentasi"
           element={
-            <RequireRole roles={['pelatih', 'ketua', 'wakasek']}>
+            <RequireRole roles={['pelatih', 'ketua', 'admin']}>
               <SuspendedPage>
                 <DocumentationPage />
               </SuspendedPage>
@@ -213,7 +211,7 @@ function AppRoutes() {
         <Route
           path="perizinan"
           element={
-            <RequireRole roles={['pelatih', 'ketua', 'wakasek']}>
+            <RequireRole roles={['pelatih', 'ketua', 'admin']}>
               <SuspendedPage>
                 <PermitsPage />
               </SuspendedPage>
@@ -223,7 +221,7 @@ function AppRoutes() {
         <Route
           path="laporan"
           element={
-            <RequireRole roles={['wakasek', 'admin']}>
+            <RequireRole roles={['admin']}>
               <SuspendedPage>
                 <ReportsPage />
               </SuspendedPage>
@@ -233,7 +231,7 @@ function AppRoutes() {
         <Route
           path="eskul"
           element={
-            <RequireRole roles={['wakasek', 'admin']}>
+            <RequireRole roles={['admin']}>
               <SuspendedPage>
                 <EskulListPage />
               </SuspendedPage>
@@ -243,7 +241,7 @@ function AppRoutes() {
         <Route
           path="eskul/:id"
           element={
-            <RequireRole roles={['wakasek', 'admin']}>
+            <RequireRole roles={['admin']}>
               <SuspendedPage>
                 <EskulDetailPage />
               </SuspendedPage>

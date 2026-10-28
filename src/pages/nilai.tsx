@@ -384,7 +384,7 @@ export function GradesPage() {
         <Field
           label="Catatan untuk anggota"
           htmlFor="grade-note"
-          hint="Catatan ini dapat menjadi bahan pembinaan dan laporan wakasek."
+          hint="Catatan ini dapat menjadi bahan pembinaan dan laporan admin."
         >
           <Textarea
             id="grade-note"
