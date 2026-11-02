@@ -41,7 +41,7 @@ type DetailTab = 'ringkasan' | 'anggota' | 'sesi' | 'dokumentasi'
 function PermitRow({ permit }: { permit: Permit }) {
   return (
     <Link
-      to="/perizinan"
+      to={`/surat/${permit.id}`}
       className="flex items-center gap-2.5 rounded-xl border border-border/60 p-2.5 transition-colors hover:bg-muted/40"
     >
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -352,15 +352,15 @@ export function EskulDetailPage() {
 
             <Card>
               <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-                <CardTitle className="text-sm">Perizinan</CardTitle>
-                <Link to="/perizinan" className="text-[10px] font-bold text-primary hover:underline">
+                <CardTitle className="text-sm">Surat Izin</CardTitle>
+                <Link to="/surat" className="text-[10px] font-bold text-primary hover:underline">
                   Lihat semua
                 </Link>
               </CardHeader>
               <CardContent className="space-y-2">
                 {eskulPermits.length === 0 ? (
                   <p className="py-4 text-center text-[11px] text-muted-foreground">
-                    Belum ada perizinan.
+                    Belum ada surat izin.
                   </p>
                 ) : (
                   eskulPermits.slice(0, 3).map((permit) => (

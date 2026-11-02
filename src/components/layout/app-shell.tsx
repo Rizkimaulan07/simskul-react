@@ -2,7 +2,7 @@ import {
   Bell,
   CalendarCheck2,
   CalendarDays,
-  ClipboardCheck,
+  FileSignature,
   GraduationCap,
   Images,
   LayoutDashboard,
@@ -39,7 +39,7 @@ const navByRole: Record<Role, NavItem[]> = {
     { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/eskul', label: 'Data Eskul', icon: School },
     { to: '/sesi', label: 'Sesi & Presensi', icon: CalendarCheck2 },
-    { to: '/perizinan', label: 'Persetujuan Izin', icon: ClipboardCheck },
+    { to: '/surat', label: 'Surat Izin', icon: FileSignature },
     { to: '/laporan', label: 'Laporan & Nilai', icon: TrendingUp },
     { to: '/dokumentasi', label: 'Galeri Eskul', icon: Images },
     { to: '/admin', label: 'Manajemen Pengguna', icon: UserCog },
@@ -50,15 +50,16 @@ const navByRole: Record<Role, NavItem[]> = {
     { to: '/anggota', label: 'Data Anggota', icon: Users },
     { to: '/nilai', label: 'Penilaian', icon: GraduationCap },
     { to: '/dokumentasi', label: 'Dokumentasi', icon: Images },
-    { to: '/perizinan', label: 'Perizinan', icon: ClipboardCheck },
+    { to: '/surat', label: 'Surat Izin', icon: FileSignature },
   ],
   ketua: [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/sesi', label: 'Sesi & Presensi', icon: CalendarCheck2 },
     { to: '/anggota', label: 'Data Anggota', icon: Users },
     { to: '/dokumentasi', label: 'Dokumentasi', icon: Images },
-    { to: '/perizinan', label: 'Perizinan', icon: ClipboardCheck },
+    { to: '/surat', label: 'Surat Izin', icon: FileSignature },
   ],
+  wakasek: [{ to: '/surat', label: 'Surat Izin', icon: FileSignature }],
 }
 
 const pageTitles: Record<string, string> = {
@@ -67,7 +68,7 @@ const pageTitles: Record<string, string> = {
   '/anggota': 'Data Anggota',
   '/nilai': 'Penilaian',
   '/dokumentasi': 'Dokumentasi',
-  '/perizinan': 'Perizinan',
+  '/surat': 'Surat Izin',
   '/laporan': 'Laporan & Nilai',
   '/eskul': 'Data Eskul',
   '/admin': 'Manajemen Pengguna',
@@ -76,6 +77,7 @@ const pageTitles: Record<string, string> = {
 function getPageTitle(pathname: string) {
   if (pathname.startsWith('/sesi/')) return 'Detail Sesi'
   if (pathname.startsWith('/eskul/')) return 'Detail Eskul'
+  if (pathname.startsWith('/surat/')) return 'Detail Surat Izin'
   return pageTitles[pathname] ?? 'SIMSKUL'
 }
 
@@ -141,7 +143,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <ul className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon
-            const showBadge = item.to === '/perizinan' && pendingCount > 0
+            const showBadge = item.to === '/surat' && pendingCount > 0
             return (
               <li key={item.to}>
                 <NavLink
@@ -240,7 +242,7 @@ function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
 
   if (!user) return null
   const userEskul = eskul.find((item) => item.id === user.eskulId)
-  const notificationTarget = '/perizinan'
+  const notificationTarget = '/surat'
 
   return (
     <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 backdrop-blur-xl print:hidden">
@@ -270,8 +272,8 @@ function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
           <Link
             to={notificationTarget}
             className="relative flex size-9 items-center justify-center rounded-xl border border-border/70 bg-card text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Notifikasi perizinan"
-            title="Notifikasi perizinan"
+            aria-label="Notifikasi surat izin"
+            title="Notifikasi surat izin"
           >
             <Bell className="size-[17px]" />
             {pendingCount > 0 ? (
@@ -317,7 +319,7 @@ export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
-    <div className="min-h-dvh bg-background">
+    <div className="min-h-dvh bg-background print:bg-white">
       <div
         className={cn(
           'fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-sm transition-opacity lg:hidden',
@@ -335,7 +337,7 @@ export function AppShell() {
         {mobileOpen ? <SidebarContent onNavigate={() => setMobileOpen(false)} /> : <SidebarContent />}
       </aside>
 
-      <div className="lg:pl-[288px]">
+      <div className="lg:pl-[288px] print:pl-0">
         <Topbar onOpenMenu={() => setMobileOpen(true)} />
         <main className="page-enter mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <Outlet />

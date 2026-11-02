@@ -19,13 +19,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { AttendanceBadge, CoachPresenceBadge, EskulChip } from '@/components/shared/badges'
+import { AttendanceBadge, CoachPresenceBadge, EskulChip, RoleBadge } from '@/components/shared/badges'
 import { EmptyState } from '@/components/shared/empty-state'
 import { ATTENDANCE_META, ATTENDANCE_STATUSES } from '@/lib/constants'
 import { canEditAttendance } from '@/lib/permissions'
 import { useAppStore, useCurrentUser } from '@/lib/store'
 import { getActiveStudents, getSessionStats } from '@/lib/selectors'
-import type { AttendanceStatus } from '@/lib/types'
+import type { AttendanceStatus, StaffAttendanceEntry, StaffRole } from '@/lib/types'
 import {
   cn,
   downloadCSV,
@@ -34,6 +34,97 @@ import {
   formatDateShort,
   percentage,
 } from '@/lib/utils'
+
+function AttendanceStatusPicker({
+  current,
+  label,
+  onSelect,
+}: {
+  current?: AttendanceStatus
+  label: string
+  onSelect: (status: AttendanceStatus) => void
+}) {
+  return (
+    <div className="grid w-full grid-cols-4 gap-1 sm:w-auto" role="group" aria-label={label}>
+      {ATTENDANCE_STATUSES.map((status) => {
+        const meta = ATTENDANCE_META[status]
+        const active = current === status
+        return (
+          <button
+            key={status}
+            type="button"
+            data-active={active}
+            aria-pressed={active}
+            aria-label={`${label}: ${meta.label}`}
+            onClick={() => onSelect(status)}
+            className={cn(
+              'h-8 rounded-lg border border-border bg-card px-2.5 text-[10px] font-bold text-muted-foreground transition-all hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+              meta.button,
+            )}
+          >
+            {meta.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function StaffAttendanceRow({
+  userId,
+  name,
+  role,
+  hint,
+  entry,
+  updatedByName,
+  canEdit,
+  onSelect,
+}: {
+  userId?: string
+  name: string
+  role: StaffRole
+  hint: string
+  entry?: StaffAttendanceEntry
+  updatedByName?: string
+  canEdit: boolean
+  onSelect: (status: AttendanceStatus) => void
+}) {
+  return (
+    <div className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-muted/20 sm:flex-row sm:items-center">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <Avatar name={name} id={userId} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="truncate text-xs font-bold text-foreground">{name}</p>
+            <RoleBadge role={role} className="px-1.5 py-0 text-[9px]" />
+          </div>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>
+          {entry ? (
+            <p className="mt-0.5 text-[9px] text-muted-foreground/70">
+              Diisi {updatedByName ?? 'pengguna'} · {formatDateTime(entry.updatedAt)}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {canEdit ? (
+        <AttendanceStatusPicker
+          current={entry?.status}
+          label={`Presensi ${name}`}
+          onSelect={onSelect}
+        />
+      ) : (
+        <div className="flex shrink-0 items-center gap-2">
+          {entry ? (
+            <AttendanceBadge status={entry.status} />
+          ) : (
+            <Badge variant="outline">Belum diisi</Badge>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function SessionDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -74,18 +165,31 @@ export function SessionDetailPage() {
     session.attendance.some((entry) => entry.studentId === member.id),
   ).length
   const completion = percentage(filledCount, members.length)
-  const savedBy = store.users.find(
-    (item) =>
-      item.id ===
-      [...session.attendance].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
-        ?.updatedBy,
-  )
+  const coachEntry = coach
+    ? session.staffAttendance.find((entry) => entry.userId === coach.id)
+    : undefined
+  const leaderEntry = leader
+    ? session.staffAttendance.find((entry) => entry.userId === leader.id)
+    : undefined
+  const staffCount = [coach, leader].filter(Boolean).length
+  const staffFilled = [coachEntry, leaderEntry].filter(Boolean).length
+  const canEditCoachStaff = canEdit && user.role === 'pelatih'
+  const canEditLeaderStaff = canEdit && (user.role === 'pelatih' || leader?.id === user.id)
+  const lastEntry = [...session.attendance, ...session.staffAttendance].sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  )[0]
+  const savedBy = store.users.find((item) => item.id === lastEntry?.updatedBy)
 
-  const handlePresence = (present: boolean) => {
-    store.setCoachPresence(session.id, present, user.id)
-    if (present) {
+  const handleStaffAttendance = (
+    staffUserId: string,
+    role: StaffRole,
+    status: AttendanceStatus,
+  ) => {
+    store.setStaffAttendance(session.id, staffUserId, status, user.id)
+    if (role !== 'pelatih') return
+    if (status === 'hadir') {
       toast.success('Pelatih ditandai hadir', {
-        description: 'Presensi tetap dapat diisi oleh pelatih. Ketua eskul tidak dapat mengubahnya.',
+        description: 'Presensi ketua eskul terkunci selama pelatih tercatat hadir.',
       })
     } else {
       toast.warning('Presensi dialihkan ke ketua eskul', {
@@ -108,10 +212,32 @@ export function SessionDetailPage() {
   }
 
   const handleExport = () => {
+    const staffRows: (string | number)[][] = []
+    if (coach && coachEntry) {
+      staffRows.push([
+        coach.name,
+        'Pelatih',
+        '-',
+        '-',
+        ATTENDANCE_META[coachEntry.status].label,
+        store.users.find((item) => item.id === coachEntry.updatedBy)?.name ?? '-',
+      ])
+    }
+    if (leader && leaderEntry) {
+      staffRows.push([
+        leader.name,
+        'Ketua',
+        '-',
+        '-',
+        ATTENDANCE_META[leaderEntry.status].label,
+        store.users.find((item) => item.id === leaderEntry.updatedBy)?.name ?? '-',
+      ])
+    }
     const rows = members.map((member) => {
       const entry = session.attendance.find((item) => item.studentId === member.id)
       return [
         member.name,
+        'Anggota',
         member.nis,
         member.className,
         entry ? ATTENDANCE_META[entry.status].label : 'Belum diisi',
@@ -121,8 +247,8 @@ export function SessionDetailPage() {
     const slug = session.topic.toLowerCase().replaceAll(/\s+/g, '-').replaceAll(/[^\w-]/g, '')
     downloadCSV(
       `presensi-${slug}-${session.date}.csv`,
-      ['Nama', 'NIS', 'Kelas', 'Status', 'Diisi oleh'],
-      rows,
+      ['Nama', 'Peran', 'NIS', 'Kelas', 'Status', 'Diisi oleh'],
+      [...staffRows, ...rows],
     )
     toast.success('Data presensi diekspor ke CSV')
   }
@@ -177,7 +303,7 @@ export function SessionDetailPage() {
             {canEdit ? (
               <Button variant="soft" onClick={handleMarkAllPresent}>
                 <CheckCheck />
-                Semua Hadir
+                Semua Anggota
               </Button>
             ) : null}
           </div>
@@ -193,6 +319,7 @@ export function SessionDetailPage() {
                   <CardTitle>Daftar Presensi</CardTitle>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {members.length} anggota aktif · {filledCount} sudah diisi
+                    {staffCount > 0 ? ` · ${staffFilled}/${staffCount} pembina` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -273,6 +400,62 @@ export function SessionDetailPage() {
               </div>
             ) : null}
 
+            {staffCount > 0 ? (
+              <div className="border-b border-border/60 bg-muted/10">
+                <div className="flex items-center justify-between gap-2 px-4 pb-1 pt-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Pelatih & Ketua
+                  </p>
+                  <span className="text-[10px] text-muted-foreground">
+                    {staffFilled}/{staffCount} terisi
+                  </span>
+                </div>
+                <div className="divide-y divide-border/50">
+                  {coach ? (
+                    <StaffAttendanceRow
+                      userId={coach.id}
+                      name={coach.name}
+                      role="pelatih"
+                      hint="Status kehadiran menentukan akses presensi ketua eskul."
+                      entry={coachEntry}
+                      updatedByName={
+                        store.users.find((item) => item.id === coachEntry?.updatedBy)?.name
+                      }
+                      canEdit={canEditCoachStaff}
+                      onSelect={(status) => handleStaffAttendance(coach.id, 'pelatih', status)}
+                    />
+                  ) : null}
+                  {leader ? (
+                    <StaffAttendanceRow
+                      userId={leader.id}
+                      name={leader.name}
+                      role="ketua"
+                      hint={
+                        isSubstituteMode
+                          ? 'Pengganti pelatih · dapat mengisi presensi sesi ini.'
+                          : 'Dapat mengisi presensi saat pelatih berhalangan.'
+                      }
+                      entry={leaderEntry}
+                      updatedByName={
+                        store.users.find((item) => item.id === leaderEntry?.updatedBy)?.name
+                      }
+                      canEdit={canEditLeaderStaff}
+                      onSelect={(status) => handleStaffAttendance(leader.id, 'ketua', status)}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/10 px-4 pb-1 pt-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                Anggota Eskul
+              </p>
+              <span className="text-[10px] text-muted-foreground">
+                {filledCount}/{members.length} terisi
+              </span>
+            </div>
+
             {members.length === 0 ? (
               <div className="p-4">
                 <EmptyState
@@ -322,27 +505,11 @@ export function SessionDetailPage() {
                       </div>
 
                       {canEdit ? (
-                        <div className="grid w-full grid-cols-4 gap-1 sm:w-auto">
-                          {ATTENDANCE_STATUSES.map((status) => {
-                            const meta = ATTENDANCE_META[status]
-                            const active = entry?.status === status
-                            return (
-                              <button
-                                key={status}
-                                type="button"
-                                data-active={active}
-                                aria-pressed={active}
-                                onClick={() => handleSetAttendance(member.id, status)}
-                                className={cn(
-                                  'h-8 rounded-lg border border-border bg-card px-2.5 text-[10px] font-bold text-muted-foreground transition-all hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
-                                  meta.button,
-                                )}
-                              >
-                                {meta.label}
-                              </button>
-                            )
-                          })}
-                        </div>
+                        <AttendanceStatusPicker
+                          current={entry?.status}
+                          label={`Presensi ${member.name}`}
+                          onSelect={(status) => handleSetAttendance(member.id, status)}
+                        />
                       ) : (
                         <div className="flex shrink-0 items-center gap-2">
                           {entry ? (
@@ -360,12 +527,12 @@ export function SessionDetailPage() {
 
             <div className="flex flex-col gap-1.5 border-t border-border/60 bg-muted/20 px-4 py-3 text-[10px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
               <span>
-                {session.attendance.length > 0
+                {session.attendance.length > 0 || session.staffAttendance.length > 0
                   ? `Terakhir diisi oleh ${savedBy?.name ?? 'pengguna'}`
                   : 'Presensi belum diisi'}
               </span>
               <span>
-                {stats.total} catatan · {stats.rate}% kehadiran
+                {stats.total} catatan anggota · {stats.rate}% kehadiran
               </span>
             </div>
           </Card>
@@ -374,73 +541,68 @@ export function SessionDetailPage() {
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Kehadiran Pelatih</CardTitle>
+              <CardTitle className="text-sm">Kehadiran Pembina</CardTitle>
               <p className="text-[11px] text-muted-foreground">
-                Menentukan siapa yang dapat mengisi presensi.
+                Pelatih dan ketua eskul pada sesi ini.
               </p>
             </CardHeader>
             <CardContent className="space-y-3">
-              {user.role === 'pelatih' ? (
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handlePresence(true)}
-                    className={cn(
-                      'flex h-10 items-center justify-center gap-1.5 rounded-xl border text-xs font-bold transition-all',
-                      session.coachPresent === true
-                        ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
-                        : 'border-border bg-card text-muted-foreground hover:bg-muted',
-                    )}
-                  >
-                    <CheckCircle2 className="size-3.5" />
-                    Hadir
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePresence(false)}
-                    className={cn(
-                      'flex h-10 items-center justify-center gap-1.5 rounded-xl border text-xs font-bold transition-all',
-                      session.coachPresent === false
-                        ? 'border-rose-600 bg-rose-600 text-white shadow-sm'
-                        : 'border-border bg-card text-muted-foreground hover:bg-muted',
-                    )}
-                  >
-                    <UserCheck className="size-3.5" />
-                    Berhalangan
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <CoachPresenceBadge present={session.coachPresent} />
-                </div>
-              )}
-
               <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-                <div className="flex items-center gap-2">
-                  <Avatar name={coach?.name ?? 'Pelatih'} id={coach?.id} size="xs" />
-                  <div className="min-w-0">
-                    <p className="truncate text-[11px] font-bold text-foreground">
-                      {coach?.name ?? 'Pelatih'}
-                    </p>
-                    <p className="text-[9px] text-muted-foreground">Pelatih {eskul?.name}</p>
-                  </div>
-                </div>
-                {session.coachPresent === false ? (
-                  <div className="mt-2.5 border-t border-border/60 pt-2.5">
-                    <div className="flex items-center gap-2">
-                      <Avatar name={leader?.name ?? 'Ketua'} id={leader?.id} size="xs" />
-                      <div className="min-w-0">
-                        <p className="truncate text-[11px] font-bold text-foreground">
-                          {leader?.name ?? 'Ketua eskul'}
-                        </p>
-                        <p className="text-[9px] text-muted-foreground">
-                          Pengganti · dapat mengisi presensi
-                        </p>
-                      </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Avatar name={coach?.name ?? 'Pelatih'} id={coach?.id} size="xs" />
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] font-bold text-foreground">
+                        {coach?.name ?? 'Pelatih'}
+                      </p>
+                      <p className="text-[9px] text-muted-foreground">Pelatih {eskul?.name}</p>
                     </div>
                   </div>
-                ) : null}
+                  {coachEntry ? (
+                    <AttendanceBadge status={coachEntry.status} />
+                  ) : (
+                    <CoachPresenceBadge present={session.coachPresent} />
+                  )}
+                </div>
+
+                <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-border/60 pt-2.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Avatar name={leader?.name ?? 'Ketua'} id={leader?.id} size="xs" />
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] font-bold text-foreground">
+                        {leader?.name ?? 'Ketua eskul'}
+                      </p>
+                      <p className="text-[9px] text-muted-foreground">
+                        {isSubstituteMode
+                          ? 'Pengganti · dapat mengisi presensi'
+                          : 'Ketua eskul'}
+                      </p>
+                    </div>
+                  </div>
+                  {leaderEntry ? (
+                    <AttendanceBadge status={leaderEntry.status} />
+                  ) : (
+                    <Badge variant="outline">Belum diisi</Badge>
+                  )}
+                </div>
               </div>
+
+              {session.coachPresent === false ? (
+                <div className="rounded-xl bg-sky-50/70 p-3 text-[10px] leading-relaxed text-sky-900/80 dark:bg-sky-500/[0.07] dark:text-sky-100/70">
+                  <span className="font-bold">
+                    {leader?.name ?? 'Ketua eskul'} dapat mengisi presensi.
+                  </span>{' '}
+                  Pelatih berhalangan, sehingga ketua eskul mendapat akses untuk sesi ini.
+                </div>
+              ) : session.coachPresent === null ? (
+                <p className="text-[10px] leading-relaxed text-muted-foreground">
+                  Presensi ketua eskul menunggu konfirmasi kehadiran pelatih.
+                </p>
+              ) : (
+                <p className="text-[10px] leading-relaxed text-muted-foreground">
+                  Presensi ketua eskul terkunci selama pelatih tercatat hadir.
+                </p>
+              )}
 
               {session.coachNote ? (
                 <div className="rounded-xl bg-amber-50/70 p-3 text-[10px] leading-relaxed text-amber-900/80 dark:bg-amber-500/[0.07] dark:text-amber-100/70">
@@ -449,8 +611,8 @@ export function SessionDetailPage() {
               ) : null}
               {user.role === 'pelatih' ? (
                 <p className="text-[10px] leading-relaxed text-muted-foreground">
-                  Dengan menandai berhalangan, ketua eskul otomatis mendapat akses presensi
-                  untuk sesi ini. Jejak pengganti tetap tersimpan.
+                  Ubah status pelatih pada daftar presensi. Status selain Hadir otomatis membuka
+                  akses presensi untuk ketua eskul.
                 </p>
               ) : null}
             </CardContent>

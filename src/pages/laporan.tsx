@@ -46,7 +46,7 @@ import {
   todayISO,
 } from '@/lib/utils'
 
-type ReportTab = 'kehadiran' | 'nilai' | 'perizinan'
+type ReportTab = 'kehadiran' | 'nilai' | 'surat'
 
 export function ReportsPage() {
   const store = useAppStore()
@@ -144,7 +144,7 @@ export function ReportsPage() {
       )
     } else {
       downloadCSV(
-        `laporan-perizinan-${todayISO()}.csv`,
+        `laporan-surat-izin-${todayISO()}.csv`,
         ['Kegiatan', 'Eskul', 'Jenis', 'Mulai', 'Selesai', 'Lokasi', 'Status', 'Catatan'],
         scopedPermits.map((permit) => {
           const eskul = store.eskul.find((item) => item.id === permit.eskulId)
@@ -169,7 +169,7 @@ export function ReportsPage() {
       <PageHeader
         eyebrow="Laporan Kesiswaan"
         title="Laporan & Nilai"
-        description="Tinjau rekap kehadiran, nilai, dan perizinan lintas eskul. Cetak atau ekspor untuk rapat kesiswaan."
+        description="Tinjau rekap kehadiran, nilai, dan surat izin lintas eskul. Cetak atau ekspor untuk rapat kesiswaan."
         actions={
           <>
             <Button variant="outline" onClick={() => window.print()}>
@@ -232,7 +232,7 @@ export function ReportsPage() {
           items={[
             { value: 'kehadiran', label: 'Kehadiran', count: activeStudents.length },
             { value: 'nilai', label: 'Nilai', count: allGraded.length },
-            { value: 'perizinan', label: 'Perizinan', count: store.permits.length },
+            { value: 'surat', label: 'Surat Izin', count: store.permits.length },
           ]}
         />
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -268,7 +268,7 @@ export function ReportsPage() {
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder={tab === 'perizinan' ? 'Cari kegiatan...' : 'Cari anggota...'}
+              placeholder={tab === 'surat' ? 'Cari kegiatan...' : 'Cari anggota...'}
               className="h-9 pl-9 text-xs"
             />
           </div>
@@ -507,12 +507,12 @@ export function ReportsPage() {
         </Card>
       ) : null}
 
-      {tab === 'perizinan' ? (
+      {tab === 'surat' ? (
         <Card className="overflow-hidden">
           <CardHeader className="pb-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <CardTitle className="text-sm">Rekap perizinan</CardTitle>
+                <CardTitle className="text-sm">Rekap surat izin</CardTitle>
                 <p className="text-[11px] text-muted-foreground">
                   {scopedPermits.length} pengajuan sesuai filter
                 </p>
@@ -579,8 +579,8 @@ export function ReportsPage() {
             </TableBody>
           </Table>
           <div className="border-t border-border/60 px-4 py-3 print:hidden">
-            <Link to="/perizinan" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-              Buka halaman persetujuan
+            <Link to="/surat" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+              Buka halaman surat izin
             </Link>
           </div>
         </Card>

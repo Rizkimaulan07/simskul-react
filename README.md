@@ -1,6 +1,6 @@
 # SIMSKUL
 
-**Sistem Informasi Manajemen Eskul** — aplikasi web fullstack untuk mengelola ekstrakurikuler sekolah: presensi, nilai, dokumentasi, perizinan, data anggota, laporan, dan manajemen data eskul.
+**Sistem Informasi Manajemen Eskul** — aplikasi web fullstack untuk mengelola ekstrakurikuler sekolah: presensi, nilai, dokumentasi, surat izin kegiatan, data anggota, laporan, dan manajemen data eskul.
 
 Data disimpan di **PostgreSQL** (bukan lagi localStorage). Backend berupa server HTTP Node.js yang menyajikan API JSON sekaligus hasil build frontend (folder `dist/`).
 
@@ -16,7 +16,7 @@ CREATE ROLE simskul_app LOGIN PASSWORD '<password>';
 GRANT ALL PRIVILEGES ON DATABASE simskul TO simskul_app;
 ```
 
-Saat pertama dijalankan pada database yang masih kosong, backend otomatis membuat seluruh tabel dan mengisi data demo (3 eskul, 6 akun, 22 anggota, sesi, nilai, dokumentasi, perizinan).
+Saat pertama dijalankan pada database yang masih kosong, backend otomatis membuat seluruh tabel dan mengisi data demo (3 eskul, 8 akun, 22 anggota, sesi, nilai, dokumentasi, dan surat izin).
 
 ### 2. Konfigurasi `.env`
 
@@ -29,7 +29,7 @@ DATABASE_URL=postgresql://simskul_app:<password>@localhost:5432/simskul
 # Kata sandi awal administrator (hanya dipakai saat seeding database kosong)
 SIMSKUL_ADMIN_PASSWORD=admin123
 
-# Kata sandi awal akun demo pelatih & ketua
+# Kata sandi awal akun demo pelatih, ketua & wakasek
 SIMSKUL_DEMO_PASSWORD=simskul123
 ```
 
@@ -63,6 +63,7 @@ npm run typecheck  # tsc untuk client & server
 | Peran | Email | Nama | Cakupan |
 | --- | --- | --- | --- |
 | Admin | admin@simskul.sch.id | Admin Sekolah | Semua eskul |
+| Wakasek Kesiswaan | wakasek@simskul.sch.id | Dewi Kartika, M.Pd. | Surat izin yang disetujui |
 | Pelatih Eskul | budi@simskul.sch.id | Budi Santoso, S.Pd. | Pramuka |
 | Ketua Eskul | rani@simskul.sch.id | Rani Puspita | Pramuka |
 
@@ -70,38 +71,66 @@ Kata sandi admin dapat diatur lewat `SIMSKUL_ADMIN_PASSWORD` saat database masih
 
 ## Peran & hak akses
 
-Sistem memakai **tiga peran**: `admin`, `pelatih`, `ketua`.
+Sistem memakai **empat peran**: `admin`, `pelatih`, `ketua`, `wakasek`.
 
-**Admin** (sentral; menggantikan fungsi wakasek kesiswaan)
+**Admin**
 - Melihat ringkasan seluruh eskul, tren kehadiran global, dan aktivitas terbaru.
 - **Mengelola data eskul**: menambah, mengedit, dan menghapus eskul — termasuk menunjuk pelatih dan ketua eskul.
 - Manajemen pengguna (tambah user, ubah peran, tentukan tugas eskul).
-- Menyetujui atau menolak perizinan dengan catatan keputusan.
-- Laporan kehadiran, nilai, dan perizinan; ekspor CSV dan cetak.
+- Menyetujui atau menolak pengajuan surat izin dengan catatan keputusan.
+- Laporan kehadiran, nilai, dan surat izin; ekspor CSV dan cetak.
 - Galeri dokumentasi lintas eskul.
 
 **Pelatih**
 - Dashboard eskul, tren kehadiran, dan sesi terdekat.
-- Membuat sesi, mengisi presensi, menandai kehadiran/berhalangan pelatih, dan mengekspor presensi ke CSV.
+- Membuat sesi, mengisi presensi anggota serta kehadiran pelatih dan ketua eskul, lalu mengekspor presensi ke CSV.
 - Mengelola anggota (tambah/nonaktifkan) dan mengunggah dokumentasi.
 - Mengisi nilai eskul (keaktifan 40%, sikap 30%, keterampilan 30%) serta catatan evaluasi.
-- Mengajukan perizinan kegiatan.
+- Mengajukan surat izin kegiatan sekaligus melengkapi isi suratnya.
 
 **Ketua Eskul**
-- Melihat dashboard, sesi, anggota, dokumentasi, dan perizinan eskulnya.
-- **Mengisi presensi hanya ketika pelatih menandai berhalangan.** Setiap isian diberi label “Pengganti” dan mencatat nama ketua sebagai pengisi.
-- Menambah anggota, mengunggah dokumentasi, dan mengajukan perizinan.
+- Melihat dashboard, sesi, anggota, dokumentasi, dan surat izin eskulnya.
+- **Mengisi presensi anggota dan kehadiran dirinya hanya ketika pelatih menandai berhalangan.** Setiap isian anggota diberi label “Pengganti” dan mencatat nama ketua sebagai pengisi.
+- Menambah anggota, mengunggah dokumentasi, dan mengajukan surat izin.
 - Tidak dapat mengubah nilai.
+
+**Wakasek Kesiswaan**
+- Langsung diarahkan ke daftar **Surat Izin** setelah masuk.
+- Hanya melihat surat dari pengajuan yang sudah **disetujui** atau **selesai**.
+- Mencetak surat A4 dan menandatanganinya secara basah pada kolom wakasek.
+- Tidak dapat mengubah data eskul, presensi, nilai, maupun isi surat.
 
 Hak akses dijaga di tiga lapis: navigasi berbasis peran, guard rute (halaman 403), dan pemeriksaan peran di setiap endpoint API.
 
+## Presensi pelatih & ketua
+
+Daftar presensi pada detail sesi memuat dua kelompok: **pelatih & ketua** serta **anggota eskul**.
+
+- Pelatih dan ketua memiliki status `hadir`, `izin`, `sakit`, atau `alpa` seperti anggota.
+- Status pelatih sekaligus menjadi penentu delegasi: `hadir` mengunci presensi ketua, sedangkan status lain membuka akses presensi untuk ketua.
+- Pelatih dapat mengoreksi kehadiran dirinya dan ketua. Ketua hanya dapat mengisi kehadirannya sendiri saat pelatih berhalangan.
+- Administrator tetap dapat meninjau seluruh isian, tetapi tidak dapat mengubah presensi.
+- Rekap statistik dan laporan tetap menghitung kehadiran anggota; kehadiran pelatih/ketua tersimpan sebagai data pembina pada sesi.
+
 ## Alur delegasi presensi
 
-1. Pelatih membuka detail sesi dan menandai **Berhalangan**.
-2. Sistem membuka presensi untuk ketua eskul pada sesi tersebut.
-3. Ketua mengisi status anggota. Setiap entri menyimpan `updatedBy`, `asSubstitute`, dan waktu perubahan.
-4. Pelatih tetap dapat mengoreksi isian; entri yang diisi pelatih tidak lagi berlabel pengganti.
+1. Pelatih membuka detail sesi dan mengisi kehadiran dirinya. Status selain **Hadir** otomatis membuka presensi untuk ketua eskul.
+2. Sistem membuka presensi anggota dan kehadiran ketua pada sesi tersebut.
+3. Ketua mengisi status anggota dan kehadiran dirinya. Setiap entri anggota menyimpan `updatedBy`, `asSubstitute`, dan waktu perubahan.
+4. Pelatih tetap dapat mengoreksi isian; entri anggota yang diisi pelatih tidak lagi berlabel pengganti.
 5. Jejak audit terlihat pada daftar presensi, ekspor CSV, dan lini masa aktivitas.
+
+## Surat izin kegiatan
+
+Halaman **Surat Izin** menggantikan menu Perizinan: pembuatan pengajuan, persetujuan admin, dan pencetakan surat dilakukan di satu tempat. Setiap pengajuan otomatis memiliki satu surat izin (`permit_letters`, relasi 1:1).
+
+1. Pelatih atau ketua membuat pengajuan dari halaman Surat Izin. Sistem langsung menyusun draf surat dari data kegiatan, eskul, ketua, dan jumlah anggota.
+2. Pengelola eskul dapat mengubah nomor, tempat/tanggal, tujuan, perihal, isi surat, jumlah peserta, lampiran, serta nama dan jabatan penanda tangan selama status masih **diajukan**.
+3. Admin memeriksa pratinjau surat dan memutuskan pengajuan. Admin tidak mengubah isi surat.
+4. Setelah **disetujui**, surat hanya dapat dilihat dan dicetak. Wakasek melihat daftar surat yang siap ditandatangani, mencetaknya dalam ukuran A4, lalu membubuhkan tanda tangan basah.
+5. Surat berstatus draf atau ditolak diberi tanda air (watermark) agar tidak tertukar dengan dokumen final.
+
+Tombol **Template awal** mengembalikan isi surat ke susunan bawaan tanpa langsung menyimpannya. Nomor surat otomatis memakai pola `001/EKSKUL/<KODE>/<BULAN ROMAWI>/<TAHUN>`.
 
 ## Teknologi
 
@@ -123,7 +152,8 @@ src/                       # frontend
     sessions/              # baris sesi, dialog buat sesi
     shared/ & ui/          # komponen dasar
   lib/
-    types.ts               # tipe domain (Role: admin|pelatih|ketua)
+    types.ts               # tipe domain (Role: admin|pelatih|ketua|wakasek)
+    permit-letter.ts       # template & nomor surat izin
     store.ts               # Zustand: auth + seluruh mutasi via API
     permissions.ts         # aturan izin per peran
   pages/                   # halaman per fitur
@@ -137,6 +167,7 @@ scripts/dev.mjs            # menjalankan server + Vite bersamaan
 ## Ringkasan salah satu fitur baru: kelola eskul (admin)
 
 - **Tambah eskul** dari halaman Data Eskul: nama, deskripsi, jadwal (hari + jam), kuota, warna tampilan, penunjukan pelatih & ketua.
+- **Buat akun pelatih/ketua langsung dari form eskul** melalui tombol “Akun baru” di samping pilihan pelatih atau ketua. Akun dibuat saat form disimpan dan langsung tertaut ke eskul tersebut.
 - **Edit eskul** dari daftar atau detail; perubahan penunjukan otomatis menyinkronkan `eskul_id` pengguna terkait.
 - **Hapus eskul** dengan konfirmasi; tugas pelatih/ketua pada eskul tersebut dilepas.
 

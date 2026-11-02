@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'pelatih' | 'ketua'
+export type Role = 'admin' | 'pelatih' | 'ketua' | 'wakasek'
 
 export type EskulColor = 'emerald' | 'sky' | 'rose' | 'amber' | 'violet'
 
@@ -56,6 +56,17 @@ export interface AttendanceEntry {
   updatedAt: string
 }
 
+export type StaffRole = 'pelatih' | 'ketua'
+
+export interface StaffAttendanceEntry {
+  userId: string
+  role: StaffRole
+  status: AttendanceStatus
+  note?: string
+  updatedBy: string
+  updatedAt: string
+}
+
 export interface Session {
   id: string
   eskulId: string
@@ -68,6 +79,7 @@ export interface Session {
   coachPresent: boolean | null
   coachNote?: string
   attendance: AttendanceEntry[]
+  staffAttendance: StaffAttendanceEntry[]
   createdBy: string
   createdAt: string
 }
@@ -96,6 +108,23 @@ export interface Documentation {
   createdAt: string
 }
 
+export interface PermitLetter {
+  number: string
+  place: string
+  date: string
+  recipient: string
+  subject: string
+  body: string
+  participantCount: number | null
+  attachments?: string
+  signerName: string
+  signerRole: string
+  updatedBy: string
+  updatedAt: string
+}
+
+export type PermitLetterInput = Omit<PermitLetter, 'updatedBy' | 'updatedAt'>
+
 export interface Permit {
   id: string
   eskulId: string
@@ -104,6 +133,8 @@ export interface Permit {
   description: string
   startDate: string
   endDate: string
+  startTime: string
+  endTime: string
   location: string
   status: PermitStatus
   createdBy: string
@@ -111,6 +142,7 @@ export interface Permit {
   decidedBy?: string
   decidedAt?: string
   decisionNote?: string
+  letter?: PermitLetter
 }
 
 export interface Activity {
@@ -182,6 +214,7 @@ export interface NewUserInput {
 }
 
 export interface NewEskulInput {
+  id?: string
   name: string
   shortName: string
   description: string

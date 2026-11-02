@@ -55,7 +55,10 @@ export function SessionsPage() {
   const monthlyStats = getMonthlyAttendance(baseSessions)
   const monthlyCount = baseSessions.filter((session) => session.date.startsWith(month)).length
   const unfilled = baseSessions.filter(
-    (session) => session.date < today && session.attendance.length === 0,
+    (session) =>
+      session.date < today &&
+      session.attendance.length === 0 &&
+      session.staffAttendance.length === 0,
   ).length
   const delegatedSessions = user.role === 'ketua' && user.eskulId
     ? getDelegatedSessions(baseSessions, user.eskulId)

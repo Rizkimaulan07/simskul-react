@@ -92,7 +92,7 @@ function DashboardHeader({
         </h1>
         <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
           {isSupervisor
-            ? 'Pantau kehadiran, perizinan, dan performa seluruh ekstrakurikuler dalam satu ringkasan.'
+            ? 'Pantau kehadiran, surat izin, dan performa seluruh ekstrakurikuler dalam satu ringkasan.'
             : `Kelola kegiatan ${eskul?.name ?? 'eskul'} dan pastikan setiap sesi terdokumentasi dengan baik.`}
         </p>
       </div>
@@ -105,9 +105,9 @@ function DashboardHeader({
           Lihat Sesi
         </Link>
         {isSupervisor ? (
-          <Link to="/perizinan" className={buttonVariants()}>
+          <Link to="/surat" className={buttonVariants()}>
             <ClipboardCheck />
-            Tinjau Izin
+            Tinjau Surat
             {pendingCount > 0 ? (
               <span className="flex size-5 items-center justify-center rounded-full bg-white/20 text-[10px] font-bold">
                 {pendingCount}
@@ -271,7 +271,7 @@ function PermitMiniList({ permits, eskul, limit = 3 }: { permits: Permit[]; esku
         return (
           <Link
             key={permit.id}
-            to="/perizinan"
+            to={`/surat/${permit.id}`}
             className="group block rounded-xl border border-border/60 bg-card p-3 transition-colors hover:border-primary/25 hover:bg-muted/30"
           >
             <div className="flex items-start gap-2.5">
@@ -360,7 +360,9 @@ export function DashboardPage() {
   const nextSession = getNextSession(store.sessions, user.eskulId)
   const todaySession = userSessions.find((session) => session.date === todayISO())
   const trend = getAttendanceTrend(isSupervisor ? store.sessions : userSessions, undefined, 6)
-  const recentSessions = userSessions.filter((session) => session.attendance.length > 0).slice(0, 4)
+  const recentSessions = userSessions
+    .filter((session) => session.attendance.length > 0 || session.staffAttendance.length > 0)
+    .slice(0, 4)
   const coach = store.users.find((item) => item.id === eskul?.coachId)
   const leader = store.users.find((item) => item.id === eskul?.leaderId)
   const lowestAttendance = members
@@ -437,7 +439,7 @@ export function DashboardPage() {
                   </p>
                 </div>
               </div>
-              <Link to="/perizinan" className={cn(buttonVariants({ size: 'sm' }), 'shrink-0')}>
+              <Link to="/surat" className={cn(buttonVariants({ size: 'sm' }), 'shrink-0')}>
                 Tinjau Sekarang
                 <ArrowRight />
               </Link>
@@ -555,13 +557,13 @@ export function DashboardPage() {
                 <CardContent>
                   <PermitMiniList permits={pendingPermits} eskul={store.eskul} limit={4} />
                   <Link
-                    to="/perizinan"
+                    to="/surat"
                     className={cn(
                       buttonVariants({ variant: 'outline', size: 'sm' }),
                       'mt-3 w-full',
                     )}
                   >
-                    Buka semua perizinan
+                    Buka semua surat
                     <ChevronRight />
                   </Link>
                 </CardContent>
@@ -783,8 +785,8 @@ export function DashboardPage() {
 
               <Card>
                 <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm">Izin terbaru</CardTitle>
-                  <Link to="/perizinan" className="text-[10px] font-bold text-primary hover:underline">
+                  <CardTitle className="text-sm">Surat terbaru</CardTitle>
+                  <Link to="/surat" className="text-[10px] font-bold text-primary hover:underline">
                     Lihat semua
                   </Link>
                 </CardHeader>
@@ -845,7 +847,7 @@ export function DashboardPage() {
                       { allowed: true, label: 'Presensi saat pelatih berhalangan' },
                       { allowed: true, label: 'Dokumentasi & pengajuan izin' },
                       { allowed: false, label: 'Mengubah nilai eskul' },
-                      { allowed: false, label: 'Menyetujui perizinan' },
+                      { allowed: false, label: 'Menyetujui surat izin' },
                     ].map((item) => (
                       <div key={item.label} className="flex items-center gap-2 text-muted-foreground">
                         {item.allowed ? (

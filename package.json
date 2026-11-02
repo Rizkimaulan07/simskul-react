@@ -16,6 +16,7 @@
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "form-data": "^4.0.6",
     "lucide-react": "^1.62.0",
     "pg": "^8.23.1",
     "react": "^19.3.1",
@@ -24,6 +25,7 @@
     "recharts": "^3.10.1",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.16"
   },
   "devDependencies": {

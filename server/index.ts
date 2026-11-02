@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { read, utils } from 'xlsx'
 import type {
   AttendanceStatus,
   EskulColor,
@@ -26,6 +27,8 @@ import {
   toPublicUser,
   transaction,
 } from './db.ts'
+import { readMultipart } from './utils.ts'
+
 import {
   createSessionToken,
   hashPassword,
@@ -34,6 +37,7 @@ import {
 } from './security.ts'
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
 const distDir = resolve(projectRoot, 'dist')
 const port = Number(process.env.PORT ?? 3001)
 const sessionCookie = 'simskul_session'
@@ -571,6 +575,291 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     return
   }
 
+  /* ---------------------- Excel import ------------------------ */
+
+  if (method === 'POST' && pathname === '/api/eskul/import') {
+    try {
+      const actor = await requireAuth(req)
+      requireRole(actor, ['admin'])
+      const body = await readMultipart(req)
+      const fileEntry = body.files.find((f) => f.fieldname === 'file')
+      if (!fileEntry) throw new HttpError(400, 'File Excel tidak ditemukan.')
+      if (fileEntry.data.length > maxBodyBytes) {
+        throw new HttpError(413, 'File Excel terlalu besar.')
+      }
+
+      const workbook = read(fileEntry.data, { type: 'buffer' })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      if (!sheet) throw new HttpError(400, 'File Excel kosong.')
+
+      const jsonRows = utils.sheet_to_json<ImportRow>(sheet, { defval: '' })
+      const results = [] as { status: 'ok' | 'error'; eskul?: { id: string; name: string }; error?: string }[]
+      const summary = { success: 0, error: 0, total: 0 } as { success: number; error: number; total: number }
+
+      for (let i = 0; i < jsonRows.length; i += 1) {
+        const row = jsonRows[i]
+        summary.total += 1
+        try {
+          const name = String(row.name || '').trim()
+          const shortName = String(row.shortName || '').trim()
+          if (!name) throw new HttpError(400, `Baris ${i + 2}: kolom "name" wajib diisi.`)
+          if (!shortName) throw new HttpError(400, `Baris ${i + 2}: kolom "shortName" wajib diisi.`)
+
+          const color = parseEskulColor(String(row.color || 'emerald'))
+          const day = parseWeekday(String(row.day || ''))
+          const time = String(row.time || '').trim()
+          const location = String(row.location || '').trim()
+          const quota =
+            typeof row.quota === 'number' ? row.quota : Number(row.quota)
+          if (!Number.isInteger(quota) || quota < 1 || quota > 999) {
+            throw new HttpError(400, `Baris ${i + 2}: kolom "quota" harus bilangan bulat 1–999.`)
+          }
+
+          const { coachId, leaderId } = await resolveEskulPersonsByNames({
+            coachName: String(row.coachName || '').trim(),
+            leaderName: String(row.leaderName || '').trim(),
+          })
+
+          const id = safeId(row.id, 'eskul')
+          await db
+            .prepare(
+              `INSERT INTO eskul
+                (id, name, short_name, description, color, day, time, location, coach_id, leader_id, quota)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(id, name, shortName, String(row.description || ''), color, day, time, location, coachId, leaderId, quota)
+          await syncAssignedUsers(id, coachId, leaderId)
+          recordActivity(actor.id, 'Import eskul dari Excel', `${name} · ${day} ${time}`)
+
+          results.push({ status: 'ok', eskul: { id, name } })
+          summary.success += 1
+        } catch (error) {
+          const e = error as { status?: number; message?: string }
+          results.push({ status: 'error', error: e.message ?? String(error) })
+          summary.error += 1
+        }
+      }
+
+      sendJson(res, 200, { results, summary })
+      return
+    } catch (error) {
+      console.error('[handleApi] uncaught error:', error)
+      throw error
+    }
+  }
+
+  /* ---------------------- Combined Excel import ------------------------ */
+
+  if (method === 'POST' && pathname === '/api/import') {
+    try {
+      const actor = await requireAuth(req)
+      requireRole(actor, ['admin'])
+      const body = await readMultipart(req)
+      const fileEntry = body?.files?.find((f) => f.fieldname === 'file')
+      if (!fileEntry) throw new HttpError(400, 'File Excel tidak ditemukan.')
+      if (fileEntry.data.length > maxBodyBytes) {
+        throw new HttpError(413, 'File Excel terlalu besar.')
+      }
+
+      const workbook = read(fileEntry.data, { type: 'buffer' })
+      const results: Record<string, { status: 'ok' | 'error'; error?: string }[]> = {}
+      const summary = { success: 0, error: 0, total: 0 } as { success: number; error: number; total: number }
+
+      const sheetRank = (name: string) => {
+        const index = ['eskul', 'pelatih', 'ketua', 'anggota'].indexOf(name.trim().toLowerCase())
+        return index === -1 ? 99 : index
+      }
+      for (const sheetName of [...workbook.SheetNames].sort((a, b) => sheetRank(a) - sheetRank(b))) {
+        const sheet = workbook.Sheets[sheetName]
+        if (!sheet) continue
+
+        const jsonRows = utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
+        const type = sheetName.trim().toLowerCase()
+        const resultKey =
+          type === 'eskul'
+            ? 'Eskul'
+            : type === 'pelatih'
+              ? 'Pelatih'
+              : type === 'ketua'
+                ? 'Ketua'
+                : type === 'anggota'
+                  ? 'Anggota'
+                  : sheetName
+        const typeResults = [] as { status: 'ok' | 'error'; error?: string }[]
+
+        for (let i = 0; i < jsonRows.length; i += 1) {
+          const row = jsonRows[i]
+          summary.total += 1
+          try {
+            if (type === 'eskul') {
+              const name = String(row.name || '').trim()
+              const shortName = String(row.shortName || '').trim()
+              if (!name) throw new HttpError(400, `Baris ${i + 2}: kolom "name" wajib diisi.`)
+              if (!shortName) throw new HttpError(400, `Baris ${i + 2}: kolom "shortName" wajib diisi.`)
+              const color = parseEskulColor(String(row.color || 'emerald'))
+              const day = parseWeekday(String(row.day || ''))
+              const time = String(row.time || '').trim()
+              const location = String(row.location || '').trim()
+              const quota =
+                typeof row.quota === 'number' ? row.quota : Number(row.quota)
+              if (!Number.isInteger(quota) || quota < 1 || quota > 999) {
+                throw new HttpError(400, `Baris ${i + 2}: kolom "quota" harus bilangan bulat 1–999.`)
+              }
+              const coachName = String(row.coachName || '').trim()
+              const leaderName = String(row.leaderName || '').trim()
+              const { coachId, leaderId } = await resolveEskulPersonsByNames({
+                coachName,
+                leaderName,
+              })
+              const description = String(row.description || '')
+              const existing = (await db
+                .prepare(
+                  'SELECT id, coach_id, leader_id FROM eskul WHERE lower(name) = lower(?) ORDER BY seq ASC LIMIT 1',
+                )
+                .get(name)) as unknown as
+                | { id: string; coach_id: string | null; leader_id: string | null }
+                | undefined
+              const id = existing?.id ?? safeId(row.id, 'eskul')
+              const nextCoachId = existing && !coachName ? existing.coach_id : coachId
+              const nextLeaderId = existing && !leaderName ? existing.leader_id : leaderId
+              if (existing) {
+                await db
+                  .prepare(
+                    `UPDATE eskul
+                     SET name = ?, short_name = ?, description = ?, color = ?, day = ?, time = ?,
+                         location = ?, coach_id = ?, leader_id = ?, quota = ?
+                     WHERE id = ?`,
+                  )
+                  .run(
+                    name,
+                    shortName,
+                    description,
+                    color,
+                    day,
+                    time,
+                    location,
+                    nextCoachId,
+                    nextLeaderId,
+                    quota,
+                    id,
+                  )
+              } else {
+                await db
+                  .prepare(
+                    `INSERT INTO eskul
+                      (id, name, short_name, description, color, day, time, location, coach_id, leader_id, quota)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  )
+                  .run(
+                    id,
+                    name,
+                    shortName,
+                    description,
+                    color,
+                    day,
+                    time,
+                    location,
+                    nextCoachId,
+                    nextLeaderId,
+                    quota,
+                  )
+              }
+              await syncAssignedUsers(id, nextCoachId, nextLeaderId)
+              if (existing?.coach_id && existing.coach_id !== nextCoachId) {
+                await db
+                  .prepare('UPDATE users SET eskul_id = NULL WHERE id = ? AND eskul_id = ?')
+                  .run(existing.coach_id, id)
+              }
+              if (existing?.leader_id && existing.leader_id !== nextLeaderId) {
+                await db
+                  .prepare('UPDATE users SET eskul_id = NULL WHERE id = ? AND eskul_id = ?')
+                  .run(existing.leader_id, id)
+              }
+              recordActivity(
+                actor.id,
+                existing ? 'Memperbarui eskul dari Excel' : 'Import eskul dari Excel',
+                `${name} · ${day} ${time}`,
+              )
+              typeResults.push({ status: 'ok' })
+              summary.success += 1
+            } else if (type === 'pelatih') {
+              const name = String(row.name || '').trim()
+              if (!name) throw new HttpError(400, `Baris ${i + 2}: kolom "name" wajib diisi.`)
+              await importStaffRow({
+                name,
+                email: optionalText(row.email, 180)?.toLowerCase(),
+                phone: optionalText(row.phone, 50),
+                password: optionalText(row.password, 200),
+                role: 'pelatih',
+                eskulName: String(row.eskulName || '').trim() || undefined,
+              })
+              recordActivity(actor.id, 'Import pelatih dari Excel', name)
+              typeResults.push({ status: 'ok' })
+              summary.success += 1
+            } else if (type === 'anggota') {
+              const name = String(row.name || '').trim()
+              const nis = String(row.nis || '').trim()
+              const className = String(row.className || '').trim()
+              const genderValue = String(row.gender || '').trim().toUpperCase()
+              if (genderValue !== 'L' && genderValue !== 'P') {
+                throw new HttpError(400, `Baris ${i + 2}: kolom "gender" harus diisi L atau P.`)
+              }
+              const gender = parseGender(genderValue)
+              const eskulName = String(row.eskulName || '').trim()
+              if (!name) throw new HttpError(400, `Baris ${i + 2}: kolom "name" wajib diisi.`)
+              if (!nis) throw new HttpError(400, `Baris ${i + 2}: kolom "nis" wajib diisi.`)
+              if (!className) throw new HttpError(400, `Baris ${i + 2}: kolom "className" wajib diisi.`)
+              if (!eskulName) throw new HttpError(400, `Baris ${i + 2}: kolom "eskulName" wajib diisi.`)
+              const eskul = await db.prepare('SELECT id FROM eskul WHERE name = ? LIMIT 1').get(eskulName) as unknown as { id: string } | undefined
+              if (!eskul) throw new HttpError(400, `Baris ${i + 2}: eskul "${eskulName}" tidak ditemukan.`)
+              const existing = await db.prepare('SELECT id FROM students WHERE nis = ? LIMIT 1').get(nis) as unknown as { id: string } | undefined
+              if (existing) throw new HttpError(409, `Baris ${i + 2}: NIS ${nis} sudah terdaftar.`)
+              const id = safeId(row.id, 'st')
+              const joinedAt = typeof row.joinedAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.joinedAt) ? row.joinedAt : new Date().toISOString().slice(0, 10)
+              await db
+                .prepare(
+                  `INSERT INTO students (id, name, nis, class_name, gender, eskul_id, active, joined_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+                )
+                .run(id, name, nis, className, gender, eskul.id, joinedAt)
+              recordActivity(actor.id, 'Import anggota dari Excel', `${name} · ${eskulName}`)
+              typeResults.push({ status: 'ok' })
+              summary.success += 1
+            } else if (type === 'ketua') {
+              const name = String(row.name || '').trim()
+              if (!name) throw new HttpError(400, `Baris ${i + 2}: kolom "name" wajib diisi.`)
+              await importStaffRow({
+                name,
+                email: optionalText(row.email, 180)?.toLowerCase(),
+                phone: optionalText(row.phone, 50),
+                password: optionalText(row.password, 200),
+                role: 'ketua',
+                eskulName: String(row.eskulName || '').trim() || undefined,
+              })
+              recordActivity(actor.id, 'Import ketua dari Excel', name)
+              typeResults.push({ status: 'ok' })
+              summary.success += 1
+            } else {
+              throw new HttpError(400, `Sheet "${sheetName}" tidak dikenali. Gunakan "Eskul", "Pelatih", "Anggota", atau "Ketua" sebagai nama sheet.`)
+            }
+          } catch (error) {
+            const e = error as { status?: number; message?: string }
+            typeResults.push({ status: 'error', error: e.message ?? String(error) })
+            summary.error += 1
+          }
+        }
+
+        results[resultKey] = typeResults
+      }
+
+      sendJson(res, 200, { results, summary })
+      return
+    } catch (error) {
+      console.error('[handleApi] uncaught error:', error)
+      throw error
+    }
+  }
+
   /* ---------------------- Sessions & attendance ------------------- */
 
   if (method === 'POST' && pathname === '/api/sessions') {
@@ -635,6 +924,75 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       user.id,
       present ? 'Menandai pelatih hadir' : 'Menandai pelatih berhalangan',
       `${await eskulName(session.eskul_id)} · ${session.topic}${present ? '' : ' · presensi dialihkan ke ketua eskul'}`,
+    )
+    sendJson(res, 200, { ok: true })
+    return
+  }
+
+  const staffAttendanceMatch = pathname.match(
+    /^\/api\/sessions\/([^/]+)\/staff-attendance\/([^/]+)$/,
+  )
+  if (method === 'PUT' && staffAttendanceMatch) {
+    const user = await requireAuth(req)
+    const body = await readJson(req)
+    const sessionId = decodeURIComponent(staffAttendanceMatch[1])
+    const staffUserId = decodeURIComponent(staffAttendanceMatch[2])
+    const session = await sessionMeta(sessionId)
+    assertEskulAccess(user, session.eskul_id, ['pelatih', 'ketua'])
+    const eskul = (await db
+      .prepare('SELECT coach_id, leader_id FROM eskul WHERE id = ? LIMIT 1')
+      .get(session.eskul_id)) as unknown as
+      | { coach_id: string | null; leader_id: string | null }
+      | undefined
+    if (!eskul) throw new HttpError(404, 'Eskul tidak ditemukan.')
+    const staffRole =
+      eskul.coach_id === staffUserId
+        ? ('pelatih' as const)
+        : eskul.leader_id === staffUserId
+          ? ('ketua' as const)
+          : null
+    if (!staffRole) {
+      throw new HttpError(400, 'Pengguna bukan pelatih atau ketua pada eskul sesi ini.')
+    }
+    if (user.role === 'ketua') {
+      if (staffUserId !== user.id) {
+        throw new HttpError(403, 'Ketua eskul hanya dapat mengisi kehadiran dirinya sendiri.')
+      }
+      if (session.coach_present !== 0) {
+        throw new HttpError(403, 'Presensi baru dapat diisi ketua setelah pelatih berhalangan.')
+      }
+    }
+    const status = parseAttendanceStatus(body.status)
+    const note = optionalText(body.note, 2000)
+    const now = new Date().toISOString()
+    await transaction(async (tx) => {
+      await tx
+        .prepare(
+          `INSERT INTO session_staff_attendance
+            (session_id, user_id, role, status, note, updated_by, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(session_id, user_id) DO UPDATE SET
+             role = excluded.role,
+             status = excluded.status,
+             note = excluded.note,
+             updated_by = excluded.updated_by,
+             updated_at = excluded.updated_at`,
+        )
+        .run(sessionId, staffUserId, staffRole, status, note ?? null, user.id, now)
+      if (staffRole === 'pelatih') {
+        await tx
+          .prepare('UPDATE sessions SET coach_present = ?, coach_note = ? WHERE id = ?')
+          .run(status === 'hadir' ? 1 : 0, status === 'hadir' ? null : (note ?? null), sessionId)
+      }
+    })
+    recordActivity(
+      user.id,
+      staffRole === 'pelatih'
+        ? status === 'hadir'
+          ? 'Menandai pelatih hadir'
+          : 'Menandai pelatih berhalangan'
+        : 'Mengisi kehadiran ketua eskul',
+      `${await eskulName(session.eskul_id)} · ${session.topic} · ${staffRole}`,
     )
     sendJson(res, 200, { ok: true })
     return
@@ -1248,3 +1606,215 @@ main().catch((error) => {
   console.error('[simskul] Server gagal dimulai:', error)
   process.exit(1)
 })
+
+// ---- Excel import types ----
+
+export interface ImportRow {
+  id?: string
+  name: string
+  shortName: string
+  description: string
+  color: string
+  day: string
+  time: string
+  location: string
+  quota: string | number
+  coachName: string
+  leaderName: string
+}
+
+// ---- Excel import helpers ----
+
+type UserRow = NonNullable<Awaited<ReturnType<typeof getUserByEmail>>>
+
+interface PersonsByNames {
+  coachName: string
+  leaderName: string
+}
+
+/** Resolve coach/ketua by name; create placeholder accounts if not found. */
+async function resolveEskulPersonsByNames(
+  input: PersonsByNames,
+): Promise<{ coachId: string | null; leaderId: string | null }> {
+  const coachId = input.coachName
+    ? await findOrCreateStaffByName(input.coachName, 'pelatih')
+    : null
+  const leaderId = input.leaderName
+    ? await findOrCreateStaffByName(input.leaderName, 'ketua')
+    : null
+  return { coachId, leaderId }
+}
+
+async function getUserRowByNameAndRole(
+  name: string,
+  role: Role,
+): Promise<UserRow | undefined> {
+  const exact = (await db
+    .prepare('SELECT * FROM users WHERE name = ? AND role = ? ORDER BY created_at ASC LIMIT 1')
+    .get(name, role)) as unknown as UserRow | undefined
+  if (exact) return exact
+
+  // Cocokkan juga nama yang memakai gelar, mis. "Budi Santoso, S.Pd.".
+  const target = normalizePersonName(name)
+  const rows = (await db
+    .prepare('SELECT * FROM users WHERE role = ? ORDER BY created_at ASC')
+    .all(role)) as unknown as UserRow[]
+  return rows.find((row) => normalizePersonName(row.name) === target)
+}
+
+function normalizePersonName(name: string): string {
+  return name
+    .split(',')[0]
+    .toLowerCase()
+    .replace(
+      /\b(s\.?pd\.?|m\.?pd\.?|s\.?or\.?|s\.?sn\.?|s\.?kom\.?|m\.?kom\.?|s\.?t\.?|m\.?t\.?|s\.?si\.?|m\.?si\.?|s\.?sos\.?|m\.?sos\.?|s\.?h\.?|m\.?h\.?|s\.?e\.?|m\.?e\.?|s\.?ak\.?|m\.?ak\.?|s\.?ked\.?|drs\.?|dra\.?|dr\.?)\s*$/i,
+      '',
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+async function findOrCreateStaffByName(name: string, role: 'pelatih' | 'ketua'): Promise<string> {
+  const existing = await getUserRowByNameAndRole(name, role)
+  if (existing) return existing.id
+
+  const id = `u-${randomUUID()}`
+  const now = new Date().toISOString()
+  await db
+    .prepare(
+      `INSERT INTO users
+        (id, name, email, password_hash, role, eskul_id, phone, active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, NULL, NULL, 1, ?, ?)`,
+    )
+    .run(id, name, await generateUniqueEmail(name), hashPassword('temp123'), role, now, now)
+  return id
+}
+
+async function generateUniqueEmail(name: string): Promise<string> {
+  const base =
+    name
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^a-z0-9]+/g, '.')
+      .replace(/^\.+|\.+$/g, '') || 'pengguna'
+  let email = `${base}@simskul.sch.id`
+  let counter = 2
+  while (await emailInUse(email)) {
+    email = `${base}${counter}@simskul.sch.id`
+    counter += 1
+  }
+  return email
+}
+
+interface StaffImportInput {
+  name: string
+  email?: string
+  phone?: string
+  password?: string
+  role: 'pelatih' | 'ketua'
+  eskulName?: string
+}
+
+/**
+ * Impor satu akun pelatih/ketua. Bila akun dengan nama+peran yang sama sudah
+ * ada (misalnya placeholder dari sheet Eskul), akun itu yang dipakai ulang
+ * supaya tidak terjadi data ganda.
+ */
+async function importStaffRow(input: StaffImportInput): Promise<string> {
+  const name = input.name.trim()
+  if (!name) throw new HttpError(400, 'Nama wajib diisi.')
+
+  let email = input.email?.trim().toLowerCase()
+  let existing = email ? await getUserByEmail(email) : undefined
+  if (existing && existing.role !== input.role) {
+    throw new HttpError(
+      400,
+      `Email ${email} sudah digunakan akun dengan peran ${existing.role}.`,
+    )
+  }
+
+  if (!existing) {
+    existing = await getUserRowByNameAndRole(name, input.role)
+  }
+  if (!email) {
+    // Jangan ubah email akun lama hanya karena kolom email dikosongkan.
+    email = existing ? existing.email.toLowerCase() : await generateUniqueEmail(name)
+  }
+
+  const now = new Date().toISOString()
+  let userId: string
+
+  if (existing) {
+    userId = existing.id
+    if (existing.email.toLowerCase() !== email && (await emailInUse(email, existing.id))) {
+      throw new HttpError(409, `Email ${email} sudah digunakan pengguna lain.`)
+    }
+    // Pertahankan nama lama bila hanya berbeda gelar (mis. ", S.Pd.").
+    const nextName =
+      normalizePersonName(existing.name) === normalizePersonName(name) ? existing.name : name
+    await db
+      .prepare(
+        `UPDATE users
+         SET name = ?, email = ?, phone = COALESCE(?, phone), password_hash = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        nextName,
+        email,
+        input.phone ?? null,
+        input.password ? hashPassword(input.password) : existing.password_hash,
+        now,
+        userId,
+      )
+  } else {
+    userId = `u-${randomUUID()}`
+    await db
+      .prepare(
+        `INSERT INTO users
+          (id, name, email, password_hash, role, eskul_id, phone, active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, 1, ?, ?)`,
+      )
+      .run(
+        userId,
+        name,
+        email,
+        hashPassword(input.password || 'temp123'),
+        input.role,
+        input.phone ?? null,
+        now,
+        now,
+      )
+  }
+
+  if (input.eskulName) {
+    await linkStaffToEskul(userId, input.role, input.eskulName)
+  }
+  return userId
+}
+
+async function linkStaffToEskul(
+  userId: string,
+  role: 'pelatih' | 'ketua',
+  eskulName: string,
+): Promise<void> {
+  const row = (await db
+    .prepare('SELECT id, coach_id, leader_id FROM eskul WHERE name = ? ORDER BY seq ASC LIMIT 1')
+    .get(eskulName)) as
+    | { id: string; coach_id: string | null; leader_id: string | null }
+    | undefined
+  if (!row) throw new HttpError(400, `Eskul "${eskulName}" tidak ditemukan.`)
+
+  await detachUserFromOtherEskuls(userId, row.id)
+  const previousId = role === 'pelatih' ? row.coach_id : row.leader_id
+  const column = role === 'pelatih' ? 'coach_id' : 'leader_id'
+  await db.prepare(`UPDATE eskul SET ${column} = ? WHERE id = ?`).run(userId, row.id)
+  await db
+    .prepare('UPDATE users SET eskul_id = ?, updated_at = ? WHERE id = ?')
+    .run(row.id, new Date().toISOString(), userId)
+
+  if (previousId && previousId !== userId) {
+    await db
+      .prepare('UPDATE users SET eskul_id = NULL WHERE id = ? AND eskul_id = ?')
+      .run(previousId, row.id)
+  }
+}

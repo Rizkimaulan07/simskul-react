@@ -10,6 +10,7 @@ import {
   Search,
   ShieldCheck,
   School,
+  Upload,
   UserCheck,
   UserCog,
   UserPlus,
@@ -35,6 +36,7 @@ import { StatCard } from '@/components/shared/stat-card'
 import { apiErrorMessage } from '@/lib/api'
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from '@/lib/constants'
 import { useAppStore, useCurrentUser } from '@/lib/store'
+import { DataImportDialog } from '@/components/import/data-import-dialog'
 import type { Role, User } from '@/lib/types'
 import { cn, formatRelative } from '@/lib/utils'
 
@@ -76,6 +78,7 @@ export function AdminPage() {
   const [resetting, setResetting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [form, setForm] = useState<UserFormState>({
@@ -271,10 +274,19 @@ export function AdminPage() {
         title="Manajemen Pengguna"
         description="Kelola akun, peran, dan hak akses pengguna SIMSKUL. Semua perubahan langsung disimpan ke database."
         actions={
-          <Button onClick={openAdd}>
-            <UserPlus />
-            Tambah Pengguna
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={openAdd}>
+              <UserPlus />
+              Tambah Pengguna
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setImportOpen(true)}
+            >
+              <Upload className="size-4 mr-2" />
+              Import Excel
+            </Button>
+          </div>
         }
       />
 
@@ -692,6 +704,8 @@ export function AdminPage() {
           </div>
         </div>
       </Dialog>
+
+      <DataImportDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   )
 }

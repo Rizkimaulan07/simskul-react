@@ -27,9 +27,6 @@ const GradesPage = lazy(() =>
 const DocumentationPage = lazy(() =>
   import('@/pages/dokumentasi').then((module) => ({ default: module.DocumentationPage })),
 )
-const PermitsPage = lazy(() =>
-  import('@/pages/perizinan').then((module) => ({ default: module.PermitsPage })),
-)
 const ReportsPage = lazy(() =>
   import('@/pages/laporan').then((module) => ({ default: module.ReportsPage })),
 )
@@ -41,6 +38,14 @@ const EskulDetailPage = lazy(() =>
 )
 const AdminPage = lazy(() =>
   import('@/pages/admin').then((module) => ({ default: module.AdminPage })),
+)
+const PermitLettersPage = lazy(() =>
+  import('@/pages/surat').then((module) => ({ default: module.PermitLettersPage })),
+)
+const PermitLetterDetailPage = lazy(() =>
+  import('@/pages/surat-detail').then((module) => ({
+    default: module.PermitLetterDetailPage,
+  })),
 )
 
 function PageLoader() {
@@ -130,6 +135,8 @@ function RequireRole({ roles, children }: { roles: Role[]; children: ReactNode }
 }
 
 function HomeRoute() {
+  const user = useCurrentUser()
+  if (user?.role === 'wakasek') return <Navigate to="/surat" replace />
   return (
     <SuspendedPage>
       <DashboardPage />
@@ -208,12 +215,23 @@ function AppRoutes() {
             </RequireRole>
           }
         />
+        <Route path="perizinan" element={<Navigate to="/surat" replace />} />
         <Route
-          path="perizinan"
+          path="surat"
           element={
-            <RequireRole roles={['pelatih', 'ketua', 'admin']}>
+            <RequireRole roles={['admin', 'pelatih', 'ketua', 'wakasek']}>
               <SuspendedPage>
-                <PermitsPage />
+                <PermitLettersPage />
+              </SuspendedPage>
+            </RequireRole>
+          }
+        />
+        <Route
+          path="surat/:permitId"
+          element={
+            <RequireRole roles={['admin', 'pelatih', 'ketua', 'wakasek']}>
+              <SuspendedPage>
+                <PermitLetterDetailPage />
               </SuspendedPage>
             </RequireRole>
           }

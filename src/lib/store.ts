@@ -1,9 +1,9 @@
 import { toast } from 'sonner'
 import { create } from 'zustand'
 import { api, ApiError, apiErrorMessage } from './api'
+import { buildDefaultPermitLetter, nextPermitLetterSequence } from './permit-letter'
 import type {
   AttendanceStatus,
-  Eskul,
   EskulPatch,
   Grade,
   NewDocumentationInput,
@@ -12,8 +12,11 @@ import type {
   NewSessionInput,
   NewStudentInput,
   NewUserInput,
+  Permit,
+  PermitLetterInput,
   SeedData,
   Session,
+  StaffAttendanceEntry,
   Student,
   User,
   UserPatch,
@@ -21,6 +24,10 @@ import type {
 import { todayISO, uid } from './utils'
 
 type GradePatch = Partial<Pick<Grade, 'keaktifan' | 'sikap' | 'keterampilan' | 'note'>>
+
+interface MutationOptions {
+  notify?: boolean
+}
 
 type BootStatus = 'loading' | 'authenticated' | 'guest' | 'error'
 
@@ -51,11 +58,18 @@ interface AppStore extends SeedData {
     actorId: string,
     note?: string,
   ) => void
+  setStaffAttendance: (
+    sessionId: string,
+    staffUserId: string,
+    status: AttendanceStatus,
+    actorId: string,
+    note?: string,
+  ) => void
   markAllPresent: (sessionId: string, actorId: string) => void
   saveGrade: (studentId: string, semester: string, patch: GradePatch, actorId: string) => void
   addDocumentation: (input: NewDocumentationInput) => void
   deleteDocumentation: (documentationId: string, actorId: string) => void
-  createPermit: (input: NewPermitInput) => void
+  createPermit: (input: NewPermitInput) => string
   reviewPermit: (
     permitId: string,
     decision: 'disetujui' | 'ditolak',
@@ -63,10 +77,11 @@ interface AppStore extends SeedData {
     actorId: string,
   ) => void
   completePermit: (permitId: string, actorId: string) => void
+  savePermitLetter: (permitId: string, input: PermitLetterInput, actorId: string) => void
   addStudent: (input: NewStudentInput, actorId: string) => Student
   toggleStudentActive: (studentId: string, actorId: string) => void
-  createEskul: (input: NewEskulInput) => Promise<void>
-  updateEskul: (eskulId: string, patch: EskulPatch) => Promise<void>
+  createEskul: (input: NewEskulInput, options?: MutationOptions) => Promise<void>
+  updateEskul: (eskulId: string, patch: EskulPatch, options?: MutationOptions) => Promise<void>
   deleteEskul: (eskulId: string) => Promise<void>
   createUser: (input: NewUserInput) => Promise<User>
   updateUser: (userId: string, patch: UserPatch) => Promise<User>
@@ -181,6 +196,21 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     })),
 
   addSession: (input) => {
+    const state = get()
+    const eskul = state.eskul.find((item) => item.id === input.eskulId)
+    const coach = state.users.find((item) => item.id === eskul?.coachId)
+    const now = new Date().toISOString()
+    const staffAttendance: StaffAttendanceEntry[] = coach
+      ? [
+          {
+            userId: coach.id,
+            role: 'pelatih',
+            status: 'hadir',
+            updatedBy: input.createdBy,
+            updatedAt: now,
+          },
+        ]
+      : []
     const session: Session = {
       id: uid('sesi'),
       eskulId: input.eskulId,
@@ -192,31 +222,37 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       notes: input.notes,
       coachPresent: true,
       attendance: [],
+      staffAttendance,
       createdBy: input.createdBy,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     }
-    set((state) => ({ sessions: [...state.sessions, session] }))
-    const eskulName = get().eskul.find((item) => item.id === input.eskulId)?.name ?? 'Eskul'
+    set((current) => ({ sessions: [...current.sessions, session] }))
+    const eskulName = eskul?.name ?? 'Eskul'
     get().addActivity(input.createdBy, 'Membuat sesi baru', `${eskulName} · ${input.topic}`)
     sync(api.post('/sessions', session))
     return session
   },
 
   setCoachPresence: (sessionId, present, actorId, note) => {
-    const session = get().sessions.find((item) => item.id === sessionId)
+    const state = get()
+    const session = state.sessions.find((item) => item.id === sessionId)
     if (!session) return
-    set((state) => ({
-      sessions: state.sessions.map((item) =>
+    const coachId = state.eskul.find((item) => item.id === session.eskulId)?.coachId
+    if (coachId) {
+      get().setStaffAttendance(sessionId, coachId, present ? 'hadir' : 'izin', actorId, note)
+      return
+    }
+    set((current) => ({
+      sessions: current.sessions.map((item) =>
         item.id === sessionId
           ? { ...item, coachPresent: present, coachNote: note ?? item.coachNote }
           : item,
       ),
     }))
-    const eskulName = get().eskul.find((item) => item.id === session.eskulId)?.name ?? 'Eskul'
     get().addActivity(
       actorId,
       present ? 'Menandai pelatih hadir' : 'Menandai pelatih berhalangan',
-      `${eskulName} · ${session.topic}${present ? '' : ' · presensi dialihkan ke ketua eskul'}`,
+      `${state.eskul.find((item) => item.id === session.eskulId)?.name ?? 'Eskul'} · ${session.topic}${present ? '' : ' · presensi dialihkan ke ketua eskul'}`,
     )
     sync(
       api.patch(`/sessions/${encodeURIComponent(sessionId)}/coach-presence`, {
@@ -255,6 +291,62 @@ export const useAppStore = create<AppStore>()((set, get) => ({
         status,
         note,
       }),
+    )
+  },
+
+  setStaffAttendance: (sessionId, staffUserId, status, actorId, note) => {
+    const state = get()
+    const session = state.sessions.find((item) => item.id === sessionId)
+    if (!session) return
+    const eskul = state.eskul.find((item) => item.id === session.eskulId)
+    const role =
+      eskul?.coachId === staffUserId
+        ? ('pelatih' as const)
+        : eskul?.leaderId === staffUserId
+          ? ('ketua' as const)
+          : null
+    if (!role) return
+    const now = new Date().toISOString()
+    const entry: StaffAttendanceEntry = {
+      userId: staffUserId,
+      role,
+      status,
+      note,
+      updatedBy: actorId,
+      updatedAt: now,
+    }
+    set((current) => ({
+      sessions: current.sessions.map((item) => {
+        if (item.id !== sessionId) return item
+        const exists = item.staffAttendance.some((staff) => staff.userId === staffUserId)
+        return {
+          ...item,
+          coachPresent: role === 'pelatih' ? status === 'hadir' : item.coachPresent,
+          coachNote:
+            role === 'pelatih' ? (status === 'hadir' ? undefined : note) : item.coachNote,
+          staffAttendance: exists
+            ? item.staffAttendance.map((staff) =>
+                staff.userId === staffUserId ? { ...staff, ...entry } : staff,
+              )
+            : [...item.staffAttendance, entry],
+        }
+      }),
+    }))
+    const roleLabel = role === 'pelatih' ? 'pelatih' : 'ketua'
+    get().addActivity(
+      actorId,
+      role === 'pelatih'
+        ? status === 'hadir'
+          ? 'Menandai pelatih hadir'
+          : 'Menandai pelatih berhalangan'
+        : 'Mengisi kehadiran ketua eskul',
+      `${eskul?.name ?? 'Eskul'} · ${session.topic} · ${roleLabel}`,
+    )
+    sync(
+      api.put(
+        `/sessions/${encodeURIComponent(sessionId)}/staff-attendance/${encodeURIComponent(staffUserId)}`,
+        { status, note },
+      ),
     )
   },
 
@@ -357,16 +449,31 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   },
 
   createPermit: (input) => {
-    const permit = {
+    const permit: Permit = {
       ...input,
       id: uid('perm'),
-      status: 'diajukan' as const,
+      status: 'diajukan',
       createdAt: new Date().toISOString(),
+      startTime: '08:00',
+      endTime: '17:00',
     }
+    const eskulData = get().eskul.find((item) => item.id === input.eskulId)
+    const leader = get().users.find((user) => user.id === eskulData?.leaderId)
+    const participantCount = get().students.filter(
+      (student) => student.eskulId === input.eskulId && student.active,
+    ).length
+    permit.letter = buildDefaultPermitLetter({
+      permit,
+      eskul: eskulData,
+      leader,
+      participantCount,
+      sequence: nextPermitLetterSequence(get().permits, permit.createdAt),
+    })
     set((state) => ({ permits: [permit, ...state.permits] }))
-    const eskulName = get().eskul.find((item) => item.id === input.eskulId)?.name ?? 'Eskul'
+    const eskulName = eskulData?.name ?? 'Eskul'
     get().addActivity(input.createdBy, 'Mengajukan perizinan', `${eskulName} · ${input.title}`)
     sync(api.post('/permits', permit))
+    return permit.id
   },
 
   reviewPermit: (permitId, decision, note, actorId) => {
@@ -412,6 +519,24 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     sync(api.patch(`/permits/${encodeURIComponent(permitId)}/complete`))
   },
 
+  savePermitLetter: (permitId, input, actorId) => {
+    const permit = get().permits.find((item) => item.id === permitId)
+    if (!permit) return
+    const letter = {
+      ...input,
+      updatedBy: actorId,
+      updatedAt: new Date().toISOString(),
+    }
+    set((state) => ({
+      permits: state.permits.map((item) =>
+        item.id === permitId ? { ...item, letter } : item,
+      ),
+    }))
+    const eskulName = get().eskul.find((item) => item.id === permit.eskulId)?.name ?? 'Eskul'
+    get().addActivity(actorId, 'Memperbarui surat izin', `${eskulName} · ${input.subject}`)
+    sync(api.put(`/permits/${encodeURIComponent(permitId)}/letter`, letter))
+  },
+
   addStudent: (input, actorId) => {
     const student: Student = {
       ...input,
@@ -446,17 +571,21 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     )
   },
 
-  createEskul: async (input) => {
-    await api.post<{ eskul: Eskul }>('/eskul', input)
+  createEskul: async (input, options) => {
+    await api.post<{ eskul: { id: string; name: string } }>('/eskul', input)
     await get().refresh()
-    toast.success('Eskul berhasil ditambahkan', { description: input.name })
+    if (options?.notify !== false) {
+      toast.success('Eskul berhasil ditambahkan', { description: input.name })
+    }
   },
 
-  updateEskul: async (eskulId, patch) => {
+  updateEskul: async (eskulId, patch, options) => {
     await api.patch(`/eskul/${encodeURIComponent(eskulId)}`, patch)
     await get().refresh()
-    const eskul = get().eskul.find((item) => item.id === eskulId)
-    toast.success('Data eskul diperbarui', { description: eskul?.name })
+    if (options?.notify !== false) {
+      const eskul = get().eskul.find((item) => item.id === eskulId)
+      toast.success('Data eskul diperbarui', { description: eskul?.name })
+    }
   },
 
   deleteEskul: async (eskulId) => {

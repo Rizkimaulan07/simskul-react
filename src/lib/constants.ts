@@ -12,12 +12,15 @@ export const ROLE_LABELS: Record<Role, string> = {
   admin: 'Administrator',
   pelatih: 'Pelatih Eskul',
   ketua: 'Ketua Eskul',
+  wakasek: 'Wakasek Kesiswaan',
 }
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  admin: 'Kelola seluruh eskul, akun pengguna, persetujuan izin, dan pemeliharaan data sistem.',
-  pelatih: 'Kelola presensi, nilai, dokumentasi, dan perizinan eskul yang Anda bina.',
+  admin: 'Kelola seluruh eskul, akun pengguna, persetujuan surat izin, dan pemeliharaan data sistem.',
+  pelatih: 'Kelola presensi, nilai, dokumentasi, dan surat izin eskul yang Anda bina.',
   ketua: 'Bantu pelatih mengelola eskul. Presensi terbuka saat pelatih berhalangan.',
+  wakasek:
+    'Tinjau, cetak, dan mintakan tanda tangan surat izin kegiatan yang telah disetujui administrator.',
 }
 
 export const WEEKDAY_OPTIONS = [

@@ -1,4 +1,4 @@
-import type { Session, User } from './types'
+import type { Permit, Session, User } from './types'
 
 export function isAdmin(user: User) {
   return user.role === 'admin'
@@ -37,6 +37,24 @@ export function canSubmitPermit(user: User) {
 
 export function canViewAllEskul(user: User) {
   return user.role === 'admin'
+}
+
+export function canEditPermitLetter(user: User, permit: Permit) {
+  if (permit.status !== 'diajukan') return false
+  if (user.role !== 'pelatih' && user.role !== 'ketua') return false
+  return permit.eskulId === user.eskulId
+}
+
+export function canViewPermitLetter(user: User, permit: Permit) {
+  if (user.role === 'admin') return true
+  if (user.role === 'wakasek') {
+    return permit.status === 'disetujui' || permit.status === 'selesai'
+  }
+  return permit.eskulId === user.eskulId
+}
+
+export function canPrintPermitLetter(user: User, permit: Permit) {
+  return canViewPermitLetter(user, permit) && permit.status !== 'ditolak'
 }
 
 export function canEditGrades(user: User) {

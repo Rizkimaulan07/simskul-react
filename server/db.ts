@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
+import { buildDefaultPermitLetter } from '../src/lib/permit-letter.ts'
 import { createSeedData } from '../src/lib/seed.ts'
 import type {
   Activity,
@@ -14,11 +15,13 @@ import type {
   Gender,
   Grade,
   Permit,
+  PermitLetter,
   PermitStatus,
   PermitType,
   Role,
   SeedData,
   Session,
+  StaffAttendanceEntry,
   Student,
   User,
 } from '../src/lib/types.ts'
@@ -150,7 +153,7 @@ const SCHEMA = `
     name TEXT NOT NULL,
     email TEXT NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('admin', 'pelatih', 'ketua')),
+    role TEXT NOT NULL CHECK (role IN ('admin', 'pelatih', 'ketua', 'wakasek')),
     eskul_id TEXT,
     phone TEXT,
     active INTEGER NOT NULL DEFAULT 1,
@@ -210,6 +213,17 @@ const SCHEMA = `
     PRIMARY KEY (session_id, student_id)
   );
 
+  CREATE TABLE IF NOT EXISTS session_staff_attendance (
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('pelatih', 'ketua')),
+    status TEXT NOT NULL CHECK (status IN ('hadir', 'izin', 'sakit', 'alpa')),
+    note TEXT,
+    updated_by TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, user_id)
+  );
+
   CREATE TABLE IF NOT EXISTS grades (
     id TEXT PRIMARY KEY,
     student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -252,6 +266,22 @@ const SCHEMA = `
     decision_note TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS permit_letters (
+    permit_id TEXT PRIMARY KEY REFERENCES permits(id) ON DELETE CASCADE,
+    number TEXT NOT NULL,
+    place TEXT NOT NULL DEFAULT '',
+    letter_date TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
+    participant_count INTEGER,
+    attachments TEXT,
+    signer_name TEXT NOT NULL,
+    signer_role TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS activities (
     id TEXT PRIMARY KEY,
     at TEXT NOT NULL,
@@ -267,13 +297,20 @@ const SCHEMA = `
     expires_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    id TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL
+  );
+
   CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (lower(email));
   CREATE UNIQUE INDEX IF NOT EXISTS idx_students_nis_unique ON students (nis);
   CREATE INDEX IF NOT EXISTS idx_students_eskul ON students (eskul_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_eskul ON sessions (eskul_id, date);
   CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance (student_id);
+  CREATE INDEX IF NOT EXISTS idx_session_staff_user ON session_staff_attendance (user_id);
   CREATE INDEX IF NOT EXISTS idx_grades_student ON grades (student_id);
   CREATE INDEX IF NOT EXISTS idx_permits_status ON permits (status);
+  CREATE INDEX IF NOT EXISTS idx_permit_letters_date ON permit_letters (letter_date);
   CREATE INDEX IF NOT EXISTS idx_activities_at ON activities (at);
   CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions (user_id);
 `
@@ -341,6 +378,16 @@ interface AttendanceRow {
   updated_at: string
 }
 
+interface StaffAttendanceRow {
+  session_id: string
+  user_id: string
+  role: 'pelatih' | 'ketua'
+  status: AttendanceStatus
+  note: string | null
+  updated_by: string
+  updated_at: string
+}
+
 interface GradeRow {
   id: string
   student_id: string
@@ -373,6 +420,8 @@ interface PermitRow {
   description: string
   start_date: string
   end_date: string
+  start_time: string
+  end_time: string
   location: string
   status: PermitStatus
   created_by: string
@@ -380,6 +429,22 @@ interface PermitRow {
   decided_by: string | null
   decided_at: string | null
   decision_note: string | null
+}
+
+interface PermitLetterRow {
+  permit_id: string
+  number: string
+  place: string
+  letter_date: string
+  recipient: string
+  subject: string
+  body: string
+  participant_count: number | null
+  attachments: string | null
+  signer_name: string
+  signer_role: string
+  updated_by: string
+  updated_at: string
 }
 
 interface ActivityRow {
@@ -444,6 +509,17 @@ function toAttendance(row: AttendanceRow): AttendanceEntry {
   }
 }
 
+function toStaffAttendance(row: StaffAttendanceRow): StaffAttendanceEntry {
+  return {
+    userId: row.user_id,
+    role: row.role,
+    status: row.status,
+    note: row.note ?? undefined,
+    updatedBy: row.updated_by,
+    updatedAt: row.updated_at,
+  }
+}
+
 function toGrade(row: GradeRow): Grade {
   return {
     id: row.id,
@@ -481,6 +557,8 @@ function toPermit(row: PermitRow): Permit {
     description: row.description,
     startDate: row.start_date,
     endDate: row.end_date,
+    startTime: row.start_time,
+    endTime: row.end_time,
     location: row.location,
     status: row.status,
     createdBy: row.created_by,
@@ -488,6 +566,23 @@ function toPermit(row: PermitRow): Permit {
     decidedBy: row.decided_by ?? undefined,
     decidedAt: row.decided_at ?? undefined,
     decisionNote: row.decision_note ?? undefined,
+  }
+}
+
+function toPermitLetter(row: PermitLetterRow): PermitLetter {
+  return {
+    number: row.number,
+    place: row.place,
+    date: row.letter_date,
+    recipient: row.recipient,
+    subject: row.subject,
+    body: row.body,
+    participantCount: row.participant_count,
+    attachments: row.attachments ?? undefined,
+    signerName: row.signer_name,
+    signerRole: row.signer_role,
+    updatedBy: row.updated_by,
+    updatedAt: row.updated_at,
   }
 }
 
@@ -501,6 +596,209 @@ function toActivity(row: ActivityRow): Activity {
   }
 }
 
+const STAFF_ATTENDANCE_MIGRATION = '2026-10-29-staff-attendance'
+const STAFF_KETUA_MIGRATION = '2026-10-29-staff-attendance-ketua'
+const WAKASEK_ROLE_MIGRATION = '2026-10-29-wakasek-role'
+const WAKASEK_ACCOUNT_MIGRATION = '2026-10-29-wakasek-account'
+const PERMIT_LETTERS_MIGRATION = '2026-10-29-permit-letters'
+
+const WAKASEK_EMAIL = 'wakasek@simskul.sch.id'
+
+async function migrationApplied(id: string) {
+  const applied = await db
+    .prepare('SELECT id FROM schema_migrations WHERE id = ? LIMIT 1')
+    .get(id)
+  return Boolean(applied)
+}
+
+async function recordMigration(tx: Executor, id: string) {
+  await tx
+    .prepare(
+      `INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)
+       ON CONFLICT(id) DO NOTHING`,
+    )
+    .run(id, new Date().toISOString())
+}
+
+async function runMigration(id: string, statement: string) {
+  if (await migrationApplied(id)) return
+  await transaction(async (tx) => {
+    await tx.exec(statement)
+    await recordMigration(tx, id)
+  })
+}
+
+/**
+ * Existing databases were created with a role CHECK constraint that predates
+ * the wakasek role. Rebuild it once so wakasek accounts can be stored.
+ */
+async function migrateWakasekRole() {
+  await runMigration(
+    WAKASEK_ROLE_MIGRATION,
+    `DO $$
+     DECLARE constraint_name TEXT;
+     BEGIN
+       FOR constraint_name IN
+         SELECT c.conname
+         FROM pg_constraint c
+         JOIN pg_class t ON t.oid = c.conrelid
+         JOIN pg_namespace n ON n.oid = t.relnamespace
+         WHERE t.relname = 'users'
+           AND n.nspname = current_schema()
+           AND c.contype = 'c'
+           AND pg_get_constraintdef(c.oid) ILIKE '%role%'
+       LOOP
+         EXECUTE format('ALTER TABLE users DROP CONSTRAINT %I', constraint_name);
+       END LOOP;
+       ALTER TABLE users
+         ADD CONSTRAINT users_role_check
+         CHECK (role IN ('admin', 'pelatih', 'ketua', 'wakasek'));
+     END $$;`,
+  )
+}
+
+/** Adds the demo wakasek account for databases seeded before the role existed. */
+async function migrateWakasekAccount() {
+  if (await migrationApplied(WAKASEK_ACCOUNT_MIGRATION)) return
+  await transaction(async (tx) => {
+    const existing = await tx
+      .prepare('SELECT id FROM users WHERE lower(email) = lower(?) OR id = ? LIMIT 1')
+      .get(WAKASEK_EMAIL, 'u-wakasek')
+    if (!existing) {
+      const now = new Date().toISOString()
+      const password = process.env.SIMSKUL_DEMO_PASSWORD ?? 'simskul123'
+      await tx
+        .prepare(
+          `INSERT INTO users
+            (id, name, email, password_hash, role, eskul_id, phone, active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          'u-wakasek',
+          'Dewi Kartika, M.Pd.',
+          WAKASEK_EMAIL,
+          hashPassword(password),
+          'wakasek',
+          null,
+          '0811-0000-0002',
+          1,
+          now,
+          now,
+        )
+    }
+    await recordMigration(tx, WAKASEK_ACCOUNT_MIGRATION)
+  })
+}
+
+/**
+ * Backfills one default letter per permit so every existing submission can be
+ * reviewed and printed without creating a letter manually first.
+ */
+async function migratePermitLetters() {
+  if (await migrationApplied(PERMIT_LETTERS_MIGRATION)) return
+  await transaction(async (tx) => {
+    const permitRows = (await tx
+      .prepare('SELECT * FROM permits ORDER BY created_at')
+      .all()) as unknown as PermitRow[]
+    const existingRows = (await tx
+      .prepare('SELECT permit_id FROM permit_letters')
+      .all()) as unknown as { permit_id: string }[]
+    const existing = new Set(existingRows.map((row) => row.permit_id))
+    const eskulRows = (await tx.prepare('SELECT * FROM eskul').all()) as unknown as EskulRow[]
+    const userRows = (await tx.prepare('SELECT id, name FROM users').all()) as unknown as {
+      id: string
+      name: string
+    }[]
+    const memberRows = (await tx
+      .prepare(
+        'SELECT eskul_id, COUNT(*)::int AS total FROM students WHERE active = 1 GROUP BY eskul_id',
+      )
+      .all()) as unknown as { eskul_id: string; total: number }[]
+
+    const eskulById = new Map(eskulRows.map((row) => [row.id, toEskul(row)]))
+    const userNameById = new Map(userRows.map((row) => [row.id, row.name]))
+    const memberCountByEskul = new Map(memberRows.map((row) => [row.eskul_id, row.total]))
+    const sequenceByYear = new Map<string, number>()
+
+    const insertLetter = tx.prepare(
+      `INSERT INTO permit_letters
+        (permit_id, number, place, letter_date, recipient, subject, body, participant_count, attachments, signer_name, signer_role, updated_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+
+    for (const row of permitRows) {
+      const permit = toPermit(row)
+      if (existing.has(permit.id)) continue
+      const year = permit.createdAt.slice(0, 4)
+      const sequence = (sequenceByYear.get(year) ?? 0) + 1
+      sequenceByYear.set(year, sequence)
+      const eskul = eskulById.get(permit.eskulId)
+      const leaderName = eskul?.leaderId ? userNameById.get(eskul.leaderId) : undefined
+      const letter = buildDefaultPermitLetter({
+        permit,
+        eskul,
+        leader: leaderName ? { name: leaderName } : undefined,
+        participantCount: memberCountByEskul.get(permit.eskulId) ?? 0,
+        sequence,
+      })
+      await insertLetter.run(
+        permit.id,
+        letter.number,
+        letter.place,
+        letter.date,
+        letter.recipient,
+        letter.subject,
+        letter.body,
+        letter.participantCount,
+        letter.attachments ?? null,
+        letter.signerName,
+        letter.signerRole,
+        letter.updatedBy,
+        letter.updatedAt,
+      )
+    }
+    await recordMigration(tx, PERMIT_LETTERS_MIGRATION)
+  })
+}
+
+/**
+ * Backfills staff attendance once for databases created before staff
+ * attendance existed. Migration markers prevent new coach/ketua assignments
+ * from rewriting historical sessions on every server start.
+ */
+async function migrateStaffAttendance() {
+  await runMigration(
+    STAFF_ATTENDANCE_MIGRATION,
+    `INSERT INTO session_staff_attendance
+      (session_id, user_id, role, status, note, updated_by, updated_at)
+     SELECT s.id, e.coach_id, 'pelatih',
+       CASE
+         WHEN s.coach_present = 1 THEN 'hadir'
+         WHEN lower(coalesce(s.coach_note, '')) LIKE '%sakit%' THEN 'sakit'
+         ELSE 'izin'
+       END,
+       s.coach_note, e.coach_id, s.created_at
+     FROM sessions s
+     JOIN eskul e ON e.id = s.eskul_id
+     JOIN users u ON u.id = e.coach_id
+     WHERE e.coach_id IS NOT NULL AND s.coach_present IS NOT NULL
+     ON CONFLICT (session_id, user_id) DO NOTHING`,
+  )
+  await runMigration(
+    STAFF_KETUA_MIGRATION,
+    `INSERT INTO session_staff_attendance
+      (session_id, user_id, role, status, note, updated_by, updated_at)
+     SELECT s.id, e.leader_id, 'ketua', 'hadir', NULL, e.leader_id, max(a.updated_at)
+     FROM sessions s
+     JOIN eskul e ON e.id = s.eskul_id
+     JOIN attendance a ON a.session_id = s.id AND a.as_substitute = 1
+     JOIN users u ON u.id = e.leader_id
+     WHERE e.leader_id IS NOT NULL
+     GROUP BY s.id, e.leader_id
+     ON CONFLICT (session_id, user_id) DO NOTHING`,
+  )
+}
+
 let readyPromise: Promise<boolean> | null = null
 
 /** Ensures combined schema creation + seeding runs exactly once. */
@@ -508,7 +806,12 @@ export function ready(): Promise<boolean> {
   if (!readyPromise) {
     readyPromise = (async () => {
       await db.exec(SCHEMA)
-      return seedIfEmpty()
+      const seeded = await seedIfEmpty()
+      await migrateStaffAttendance()
+      await migrateWakasekRole()
+      await migrateWakasekAccount()
+      await migratePermitLetters()
+      return seeded
     })().catch((error) => {
       readyPromise = null
       throw error
@@ -652,6 +955,11 @@ async function insertOperationalData(seed: SeedData, tx?: ExecutorLike) {
       (session_id, student_id, status, note, updated_by, as_substitute, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
+  const insertStaffAttendance = store.prepare(
+    `INSERT INTO session_staff_attendance
+      (session_id, user_id, role, status, note, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  )
   for (const session of seed.sessions) {
     await insertSession.run(
       session.id,
@@ -675,6 +983,17 @@ async function insertOperationalData(seed: SeedData, tx?: ExecutorLike) {
         entry.note ?? null,
         entry.updatedBy,
         entry.asSubstitute ? 1 : 0,
+        entry.updatedAt,
+      )
+    }
+    for (const entry of session.staffAttendance) {
+      await insertStaffAttendance.run(
+        session.id,
+        entry.userId,
+        entry.role,
+        entry.status,
+        entry.note ?? null,
+        entry.updatedBy,
         entry.updatedAt,
       )
     }
@@ -723,6 +1042,11 @@ async function insertOperationalData(seed: SeedData, tx?: ExecutorLike) {
       (id, eskul_id, type, title, description, start_date, end_date, location, status, created_by, created_at, decided_by, decided_at, decision_note)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
+  const insertPermitLetter = store.prepare(
+    `INSERT INTO permit_letters
+      (permit_id, number, place, letter_date, recipient, subject, body, participant_count, attachments, signer_name, signer_role, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
   for (const permit of seed.permits) {
     await insertPermit.run(
       permit.id,
@@ -740,6 +1064,23 @@ async function insertOperationalData(seed: SeedData, tx?: ExecutorLike) {
       permit.decidedAt ?? null,
       permit.decisionNote ?? null,
     )
+    if (permit.letter) {
+      await insertPermitLetter.run(
+        permit.id,
+        permit.letter.number,
+        permit.letter.place,
+        permit.letter.date,
+        permit.letter.recipient,
+        permit.letter.subject,
+        permit.letter.body,
+        permit.letter.participantCount,
+        permit.letter.attachments ?? null,
+        permit.letter.signerName,
+        permit.letter.signerRole,
+        permit.letter.updatedBy,
+        permit.letter.updatedAt,
+      )
+    }
   }
 
   const insertActivity = store.prepare(
@@ -801,6 +1142,15 @@ export async function readState(): Promise<SeedData> {
     entries.push(toAttendance(row))
     attendanceBySession.set(row.session_id, entries)
   }
+  const staffAttendanceRows = (await db
+    .prepare('SELECT * FROM session_staff_attendance ORDER BY updated_at')
+    .all()) as unknown as StaffAttendanceRow[]
+  const staffAttendanceBySession = new Map<string, StaffAttendanceEntry[]>()
+  for (const row of staffAttendanceRows) {
+    const entries = staffAttendanceBySession.get(row.session_id) ?? []
+    entries.push(toStaffAttendance(row))
+    staffAttendanceBySession.set(row.session_id, entries)
+  }
   const sessions: Session[] = sessionRows.map((row) => ({
     id: row.id,
     eskulId: row.eskul_id,
@@ -813,6 +1163,7 @@ export async function readState(): Promise<SeedData> {
     coachPresent: row.coach_present === null ? null : Boolean(row.coach_present),
     coachNote: row.coach_note ?? undefined,
     attendance: attendanceBySession.get(row.id) ?? [],
+    staffAttendance: staffAttendanceBySession.get(row.id) ?? [],
     createdBy: row.created_by,
     createdAt: row.created_at,
   }))
@@ -830,7 +1181,18 @@ export async function readState(): Promise<SeedData> {
   const permitRows = (await db
     .prepare('SELECT * FROM permits ORDER BY created_at DESC')
     .all()) as unknown as PermitRow[]
-  const permits = permitRows.map(toPermit)
+  const letterRows = (await db
+    .prepare('SELECT * FROM permit_letters')
+    .all()) as unknown as PermitLetterRow[]
+  const lettersByPermit = new Map<string, PermitLetter>()
+  for (const row of letterRows) {
+    lettersByPermit.set(row.permit_id, toPermitLetter(row))
+  }
+  const permits = permitRows.map((row) => {
+    const permit = toPermit(row)
+    const letter = lettersByPermit.get(permit.id)
+    return letter ? { ...permit, letter } : permit
+  })
 
   const activityRows = (await db
     .prepare('SELECT * FROM activities ORDER BY at DESC LIMIT 100')
@@ -845,9 +1207,11 @@ export async function resetDemoData(actorId: string) {
   const seed = createSeedData()
   await transaction(async (tx) => {
     await tx.exec(`
+      DELETE FROM session_staff_attendance;
       DELETE FROM attendance;
       DELETE FROM grades;
       DELETE FROM documentation;
+      DELETE FROM permit_letters;
       DELETE FROM permits;
       DELETE FROM activities;
       DELETE FROM sessions;

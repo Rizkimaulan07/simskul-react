@@ -6,6 +6,7 @@ import {
   Dumbbell,
   Eye,
   EyeOff,
+  FileSignature,
   FileText,
   GraduationCap,
   Image,
@@ -48,6 +49,11 @@ const roleVisuals: Record<Role, { icon: typeof Dumbbell; className: string }> = 
     className:
       'bg-sky-50 text-sky-600 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20',
   },
+  wakasek: {
+    icon: FileSignature,
+    className:
+      'bg-violet-50 text-violet-600 ring-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/20',
+  },
 }
 
 const demoAccounts: {
@@ -77,6 +83,13 @@ const demoAccounts: {
     email: 'rani@simskul.sch.id',
     password: 'simskul123',
     description: 'Bantu pelatih dan isi presensi pengganti',
+  },
+  {
+    role: 'wakasek',
+    name: 'Dewi Kartika, M.Pd.',
+    email: 'wakasek@simskul.sch.id',
+    password: 'simskul123',
+    description: 'Tinjau dan cetak surat izin kegiatan',
   },
 ]
 
@@ -157,7 +170,7 @@ export function LoginPage() {
 
           <div className="mt-9 grid max-w-md grid-cols-2 gap-3">
             {[
-              { value: '3', label: 'Peran pengguna' },
+              { value: '4', label: 'Peran pengguna' },
               { value: '3', label: 'Eskul aktif' },
               { value: '4', label: 'Jurusan' },
               { value: '10–12', label: 'Tingkat kelas' },
@@ -190,7 +203,7 @@ export function LoginPage() {
               },
               {
                 icon: FileText,
-                text: 'Laporan kehadiran, nilai, dan perizinan siap diekspor',
+                text: 'Laporan kehadiran, nilai, dan surat izin siap diekspor',
               },
             ].map((feature) => {
               const FeatureIcon = feature.icon

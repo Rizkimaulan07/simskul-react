@@ -1,4 +1,5 @@
 import { CURRENT_SEMESTER } from './constants.ts'
+import { buildDefaultPermitLetter } from './permit-letter.ts'
 import type {
   Activity,
   AttendanceEntry,
@@ -9,6 +10,7 @@ import type {
   Permit,
   SeedData,
   Session,
+  StaffAttendanceEntry,
   Student,
   User,
 } from './types.ts'
@@ -46,6 +48,45 @@ function makeAttendance(
   })
 }
 
+function makeStaffAttendance(
+  eskul: Eskul | undefined,
+  date: string,
+  coachPresent: boolean | null,
+  filled: boolean,
+  filledBy: string,
+  coachNote?: string,
+): StaffAttendanceEntry[] {
+  if (!eskul) return []
+  const entries: StaffAttendanceEntry[] = []
+
+  if (eskul.coachId && coachPresent !== null) {
+    entries.push({
+      userId: eskul.coachId,
+      role: 'pelatih',
+      status: coachPresent
+        ? 'hadir'
+        : coachNote?.toLowerCase().includes('sakit')
+          ? 'sakit'
+          : 'izin',
+      note: coachNote,
+      updatedBy: eskul.coachId,
+      updatedAt: timestamp(date),
+    })
+  }
+
+  if (eskul.leaderId && filled) {
+    entries.push({
+      userId: eskul.leaderId,
+      role: 'ketua',
+      status: 'hadir',
+      updatedBy: filledBy,
+      updatedAt: timestamp(date),
+    })
+  }
+
+  return entries
+}
+
 const users: User[] = [
   {
     id: 'u-admin',
@@ -53,6 +94,13 @@ const users: User[] = [
     email: 'admin@simskul.sch.id',
     role: 'admin',
     phone: '0811-0000-0001',
+  },
+  {
+    id: 'u-wakasek',
+    name: 'Dewi Kartika, M.Pd.',
+    email: 'wakasek@simskul.sch.id',
+    role: 'wakasek',
+    phone: '0811-0000-0002',
   },
   {
     id: 'u-pelatih-pramuka',
@@ -407,6 +455,7 @@ const sessions: Session[] = sessionSeeds.map((seed) => {
   const members =
     seed.eskulId === 'e-pramuka' ? pramuka : seed.eskulId === 'e-futsal' ? futsal : tari
   const date = localISO(seed.offset)
+  const eskulData = eskul.find((item) => item.id === seed.eskulId)
 
   return {
     id: seed.id,
@@ -425,6 +474,14 @@ const sessions: Session[] = sessionSeeds.map((seed) => {
     attendance: seed.filled
       ? makeAttendance(members, date, seed.filledBy, seed.asSubstitute, seed.sessionSeed)
       : [],
+    staffAttendance: makeStaffAttendance(
+      eskulData,
+      date,
+      seed.coachPresent,
+      seed.filled,
+      seed.filledBy,
+      seed.coachNote,
+    ),
     createdBy:
       seed.eskulId === 'e-pramuka'
         ? 'u-pelatih-pramuka'
@@ -541,7 +598,7 @@ const documentation: Documentation[] = [
   },
 ]
 
-const permits: Permit[] = [
+const permitSeeds: Permit[] = [
   {
     id: 'perm-1',
     eskulId: 'e-pramuka',
@@ -551,6 +608,8 @@ const permits: Permit[] = [
       'Mengikuti lomba pionering, cerdas cermat kepramukaan, dan pentas seni budaya. Kontingen terdiri dari 8 anggota dan 2 pembina pendamping.',
     startDate: localISO(14),
     endDate: localISO(16),
+    startTime: '08:00',
+    endTime: '16:00',
     location: 'Bumi Perkemahan Cibubur',
     status: 'disetujui',
     createdBy: 'u-pelatih-pramuka',
@@ -569,6 +628,8 @@ const permits: Permit[] = [
       'Mengikuti turnamen tahunan yang diikuti 16 sekolah. Tim terdiri dari 12 pemain dan 2 pelatih.',
     startDate: localISO(10),
     endDate: localISO(12),
+    startTime: '09:00',
+    endTime: '15:00',
     location: 'Aula SMK BPPI',
     status: 'diajukan',
     createdBy: 'u-pelatih-futsal',
@@ -583,6 +644,8 @@ const permits: Permit[] = [
       'Latihan intensif menjelang Pentas Seni Sekolah. Dibutuhkan aula dan sound system sederhana selama tiga hari.',
     startDate: localISO(3),
     endDate: localISO(5),
+    startTime: '14:00',
+    endTime: '17:00',
     location: 'Aula Serbaguna',
     status: 'diajukan',
     createdBy: 'u-ketua-tari',
@@ -596,6 +659,8 @@ const permits: Permit[] = [
     description: 'Latihan upacara membutuhkan ruang teduh karena cuaca tidak menentu.',
     startDate: localISO(-5),
     endDate: localISO(-4),
+    startTime: '08:00',
+    endTime: '10:00',
     location: 'Aula Serbaguna',
     status: 'ditolak',
     createdBy: 'u-pelatih-pramuka',
@@ -613,6 +678,8 @@ const permits: Permit[] = [
     description: 'Uji coba lapangan menghadapi turnamen antar sekolah.',
     startDate: localISO(-20),
     endDate: localISO(-20),
+    startTime: '07:00',
+    endTime: '17:00',
     location: 'Lapangan Merdeka',
     status: 'selesai',
     createdBy: 'u-pelatih-futsal',
@@ -630,6 +697,8 @@ const permits: Permit[] = [
       'Mengirim satu tim tari untuk mewakili sekolah pada festival tari tradisional tingkat provinsi.',
     startDate: localISO(21),
     endDate: localISO(22),
+    startTime: '08:00',
+    endTime: '17:00',
     location: 'Taman Budaya Provinsi',
     status: 'disetujui',
     createdBy: 'u-ketua-tari',
@@ -639,6 +708,27 @@ const permits: Permit[] = [
     decisionNote: 'Disetujui. Koordinasikan transportasi dengan bagian kesiswaan.',
   },
 ]
+
+const permitOrder = [...permitSeeds].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+
+const permits: Permit[] = permitSeeds.map((permit) => {
+  const eskulData = eskul.find((item) => item.id === permit.eskulId)
+  const leader = users.find((user) => user.id === eskulData?.leaderId)
+  const participantCount = students.filter(
+    (student) => student.eskulId === permit.eskulId && student.active,
+  ).length
+
+  return {
+    ...permit,
+    letter: buildDefaultPermitLetter({
+      permit,
+      eskul: eskulData,
+      leader,
+      participantCount,
+      sequence: permitOrder.findIndex((item) => item.id === permit.id) + 1,
+    }),
+  }
+})
 
 const now = Date.now()
 const activities: Activity[] = [
