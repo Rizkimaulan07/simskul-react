@@ -13,6 +13,7 @@ import {
   ShieldAlert,
   Sparkles,
   TrendingUp,
+  Trophy,
   UserCheck,
   Users,
   X,
@@ -28,7 +29,7 @@ import { CoachPresenceBadge, EskulChip, PermitStatusBadge, RoleBadge } from '@/c
 import { EmptyState } from '@/components/shared/empty-state'
 import { EskulMark } from '@/components/shared/eskul-mark'
 import { StatCard } from '@/components/shared/stat-card'
-import { ACADEMIC_YEAR } from '@/lib/constants'
+import { ACADEMIC_YEAR, ACHIEVEMENT_LEVEL_META, ACHIEVEMENT_RANK_META } from '@/lib/constants'
 import { useAppStore, useCurrentUser } from '@/lib/store'
 import {
   getAllAttendance,
@@ -41,7 +42,7 @@ import {
   getSessionStats,
   getStudentAttendance,
 } from '@/lib/selectors'
-import type { Activity, Eskul, Permit, User } from '@/lib/types'
+import type { Achievement, Activity, Eskul, Permit, User } from '@/lib/types'
 import {
   cn,
   firstName,
@@ -295,6 +296,63 @@ function PermitMiniList({ permits, eskul, limit = 3 }: { permits: Permit[]; esku
   )
 }
 
+function AchievementMiniList({
+  achievements,
+  eskul,
+  limit = 3,
+}: {
+  achievements: Achievement[]
+  eskul: Eskul[]
+  limit?: number
+}) {
+  if (achievements.length === 0) {
+    return (
+      <p className="rounded-xl bg-muted/40 px-3 py-6 text-center text-xs text-muted-foreground">
+        Belum ada prestasi tercatat.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {achievements.slice(0, limit).map((achievement) => {
+        const itemEskul = eskul.find((item) => item.id === achievement.eskulId)
+        const level = ACHIEVEMENT_LEVEL_META[achievement.level]
+        const rank = ACHIEVEMENT_RANK_META[achievement.rank]
+        return (
+          <Link
+            key={achievement.id}
+            to="/prestasi"
+            className="group block rounded-xl border border-border/60 bg-card p-3 transition-colors hover:border-amber-200 hover:bg-amber-50/30 dark:hover:border-amber-500/25 dark:hover:bg-amber-500/[0.04]"
+          >
+            <div className="flex items-start gap-2.5">
+              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-300">
+                <Trophy className="size-3.5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold text-foreground group-hover:text-amber-700 dark:group-hover:text-amber-300">
+                  {achievement.title}
+                </p>
+                <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                  {itemEskul?.name ?? 'Eskul'} · {level.label}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  'inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[9px] font-bold',
+                  rank.badge,
+                )}
+              >
+                {rank.label}
+              </span>
+            </div>
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
+
 function ActivityTimeline({
   activities,
   users,
@@ -380,6 +438,10 @@ export function DashboardPage() {
 
   const allStats = getAllAttendance(store.sessions)
   const allPermitsPending = pendingPermits.length
+  const recentAchievements = store.achievements
+    .filter((achievement) => isSupervisor || achievement.eskulId === user.eskulId)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 3)
 
   return (
     <div className="space-y-6">
@@ -566,6 +628,24 @@ export function DashboardPage() {
                     Buka semua surat
                     <ChevronRight />
                   </Link>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm">Prestasi terbaru</CardTitle>
+                  <Link
+                    to="/prestasi"
+                    className="text-[10px] font-bold text-primary hover:underline"
+                  >
+                    Lihat semua
+                  </Link>
+                </CardHeader>
+                <CardContent>
+                  <AchievementMiniList
+                    achievements={recentAchievements}
+                    eskul={store.eskul}
+                  />
                 </CardContent>
               </Card>
 
@@ -792,6 +872,24 @@ export function DashboardPage() {
                 </CardHeader>
                 <CardContent>
                   <PermitMiniList permits={ownPermits} eskul={store.eskul} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm">Prestasi terbaru</CardTitle>
+                  <Link
+                    to="/prestasi"
+                    className="text-[10px] font-bold text-primary hover:underline"
+                  >
+                    Lihat semua
+                  </Link>
+                </CardHeader>
+                <CardContent>
+                  <AchievementMiniList
+                    achievements={recentAchievements}
+                    eskul={store.eskul}
+                  />
                 </CardContent>
               </Card>
 

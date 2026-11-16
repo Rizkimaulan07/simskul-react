@@ -47,6 +47,15 @@ const PermitLetterDetailPage = lazy(() =>
     default: module.PermitLetterDetailPage,
   })),
 )
+const CalendarPage = lazy(() =>
+  import('@/pages/kalender').then((module) => ({ default: module.CalendarPage })),
+)
+const AchievementsPage = lazy(() =>
+  import('@/pages/prestasi').then((module) => ({ default: module.AchievementsPage })),
+)
+const ProfilePage = lazy(() =>
+  import('@/pages/profil').then((module) => ({ default: module.ProfilePage })),
+)
 
 function PageLoader() {
   return (
@@ -183,6 +192,34 @@ function AppRoutes() {
                 <SessionDetailPage />
               </SuspendedPage>
             </RequireRole>
+          }
+        />
+        <Route
+          path="kalender"
+          element={
+            <RequireRole roles={['pelatih', 'ketua', 'admin']}>
+              <SuspendedPage>
+                <CalendarPage />
+              </SuspendedPage>
+            </RequireRole>
+          }
+        />
+        <Route
+          path="prestasi"
+          element={
+            <RequireRole roles={['pelatih', 'ketua', 'admin']}>
+              <SuspendedPage>
+                <AchievementsPage />
+              </SuspendedPage>
+            </RequireRole>
+          }
+        />
+        <Route
+          path="profil"
+          element={
+            <SuspendedPage>
+              <ProfilePage />
+            </SuspendedPage>
           }
         />
         <Route

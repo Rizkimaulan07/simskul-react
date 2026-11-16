@@ -1,4 +1,11 @@
-import type { AttendanceStatus, PermitStatus, PermitType, Role } from './types.ts'
+import type {
+  AchievementLevel,
+  AchievementRank,
+  AttendanceStatus,
+  PermitStatus,
+  PermitType,
+  Role,
+} from './types.ts'
 
 export const CURRENT_SEMESTER = 'Ganjil 2026/2027'
 
@@ -124,3 +131,118 @@ export const GRADE_WEIGHTS = {
   sikap: 0.3,
   keterampilan: 0.3,
 } as const
+
+export const ACHIEVEMENT_LEVELS: AchievementLevel[] = [
+  'sekolah',
+  'kecamatan',
+  'kota',
+  'provinsi',
+  'nasional',
+  'internasional',
+]
+
+export const ACHIEVEMENT_LEVEL_META: Record<
+  AchievementLevel,
+  { label: string; badge: string; gradient: string; dot: string }
+> = {
+  sekolah: {
+    label: 'Tingkat Sekolah',
+    badge:
+      'border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-500/25 dark:bg-slate-500/10 dark:text-slate-300',
+    gradient: 'from-slate-500 to-slate-700',
+    dot: 'bg-slate-400',
+  },
+  kecamatan: {
+    label: 'Tingkat Kecamatan',
+    badge:
+      'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300',
+    gradient: 'from-sky-500 to-blue-700',
+    dot: 'bg-sky-500',
+  },
+  kota: {
+    label: 'Tingkat Kota',
+    badge:
+      'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300',
+    gradient: 'from-emerald-500 to-teal-700',
+    dot: 'bg-emerald-500',
+  },
+  provinsi: {
+    label: 'Tingkat Provinsi',
+    badge:
+      'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-300',
+    gradient: 'from-violet-500 to-purple-700',
+    dot: 'bg-violet-500',
+  },
+  nasional: {
+    label: 'Tingkat Nasional',
+    badge:
+      'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300',
+    gradient: 'from-amber-500 to-orange-600',
+    dot: 'bg-amber-500',
+  },
+  internasional: {
+    label: 'Tingkat Internasional',
+    badge:
+      'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300',
+    gradient: 'from-rose-500 to-pink-700',
+    dot: 'bg-rose-500',
+  },
+}
+
+export const ACHIEVEMENT_RANKS: AchievementRank[] = [
+  'juara_1',
+  'juara_2',
+  'juara_3',
+  'harapan_1',
+  'harapan_2',
+  'harapan_3',
+  'peserta',
+]
+
+export const ACHIEVEMENT_RANK_META: Record<
+  AchievementRank,
+  { label: string; short: string; badge: string }
+> = {
+  juara_1: {
+    label: 'Juara 1',
+    short: '1',
+    badge:
+      'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300',
+  },
+  juara_2: {
+    label: 'Juara 2',
+    short: '2',
+    badge:
+      'border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-500/25 dark:bg-slate-500/10 dark:text-slate-300',
+  },
+  juara_3: {
+    label: 'Juara 3',
+    short: '3',
+    badge:
+      'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/25 dark:bg-orange-500/10 dark:text-orange-300',
+  },
+  harapan_1: {
+    label: 'Harapan 1',
+    short: 'H1',
+    badge:
+      'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300',
+  },
+  harapan_2: {
+    label: 'Harapan 2',
+    short: 'H2',
+    badge:
+      'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300',
+  },
+  harapan_3: {
+    label: 'Harapan 3',
+    short: 'H3',
+    badge:
+      'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300',
+  },
+  peserta: {
+    label: 'Peserta',
+    short: 'P',
+    badge:
+      'border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-500/25 dark:bg-slate-500/10 dark:text-slate-300',
+  },
+}

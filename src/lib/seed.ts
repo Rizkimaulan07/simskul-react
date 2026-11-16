@@ -1,6 +1,7 @@
 import { CURRENT_SEMESTER } from './constants.ts'
 import { buildDefaultPermitLetter } from './permit-letter.ts'
 import type {
+  Achievement,
   Activity,
   AttendanceEntry,
   AttendanceStatus,
@@ -730,6 +731,78 @@ const permits: Permit[] = permitSeeds.map((permit) => {
   }
 })
 
+const achievements: Achievement[] = [
+  {
+    id: 'ach-1',
+    eskulId: 'e-pramuka',
+    title: 'Juara 2 Lomba Pionering',
+    event: 'Lomba Pramuka Tingkat Kota',
+    level: 'kota',
+    rank: 'juara_2',
+    date: localISO(-18),
+    participants: 'Regu Garuda: Bagas Saputra, Fajar Ramadhan, Rifqi Hidayat',
+    description:
+      'Regu Garuda menyelesaikan menara pionering tercepat kedua dengan simpul dan ikatan yang rapi.',
+    createdBy: 'u-pelatih-pramuka',
+    createdAt: timestamp(localISO(-18), '16:10'),
+  },
+  {
+    id: 'ach-2',
+    eskulId: 'e-futsal',
+    title: 'Juara 1 Turnamen Futsal Antar Sekolah',
+    event: 'Turnamen Futsal Kecamatan',
+    level: 'kecamatan',
+    rank: 'juara_1',
+    date: localISO(-42),
+    participants: 'Tim Inti Futsal: Dimas Arya, Rio Febrian, Aditya Nugraha, Bima Saputra',
+    description:
+      'Tim inti menang 4–2 pada laga final dan mencatatkan clean sheet di dua pertandingan sebelumnya.',
+    createdBy: 'u-pelatih-futsal',
+    createdAt: timestamp(localISO(-42), '17:30'),
+  },
+  {
+    id: 'ach-3',
+    eskulId: 'e-tari',
+    title: 'Juara 3 Festival Tari Tradisional',
+    event: 'Festival Tari Tradisional Provinsi',
+    level: 'provinsi',
+    rank: 'juara_3',
+    date: localISO(-76),
+    participants: 'Tim Tari Saman: Salsa Nabila, Anisa Rahma, Dinda Ayu Lestari, Kirana Maharani',
+    description:
+      'Penampilan Tari Saman mendapat apresiasi tinggi dari dewan juri karena kekompakan dan ekspresi.',
+    createdBy: 'u-pelatih-tari',
+    createdAt: timestamp(localISO(-76), '20:15'),
+  },
+  {
+    id: 'ach-4',
+    eskulId: 'e-futsal',
+    title: 'Harapan 1 Futsal Pelajar',
+    event: 'Kejuaraan Futsal Pelajar Kota',
+    level: 'kota',
+    rank: 'harapan_1',
+    date: localISO(-120),
+    participants: 'Tim Futsal Putra',
+    description: 'Menembus babak semifinal dan meraih posisi harapan pertama pada kejuaraan kota.',
+    createdBy: 'u-pelatih-futsal',
+    createdAt: timestamp(localISO(-120), '18:45'),
+  },
+  {
+    id: 'ach-5',
+    eskulId: 'e-pramuka',
+    title: 'Peserta Terbaik Jambore Daerah',
+    event: 'Jambore Pramuka Daerah',
+    level: 'provinsi',
+    rank: 'peserta',
+    date: localISO(-210),
+    participants: 'Kontingen Pramuka SMK BPPI',
+    description:
+      'Kontingen mengikuti seluruh rangkaian kegiatan dan meraih penghargaan regu disiplin terbaik.',
+    createdBy: 'u-pelatih-pramuka',
+    createdAt: timestamp(localISO(-210), '14:20'),
+  },
+]
+
 const now = Date.now()
 const activities: Activity[] = [
   {
@@ -792,6 +865,7 @@ export function createSeedData(): SeedData {
     grades: structuredClone(grades),
     documentation: structuredClone(documentation),
     permits: structuredClone(permits),
+    achievements: structuredClone(achievements),
     activities: structuredClone(activities),
   }
 }

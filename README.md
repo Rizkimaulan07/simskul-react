@@ -1,6 +1,6 @@
 # SIMSKUL
 
-**Sistem Informasi Manajemen Eskul** — aplikasi web fullstack untuk mengelola ekstrakurikuler sekolah: presensi, nilai, dokumentasi, surat izin kegiatan, data anggota, laporan, dan manajemen data eskul.
+**Sistem Informasi Manajemen Eskul** — aplikasi web fullstack untuk mengelola ekstrakurikuler sekolah: presensi, nilai, dokumentasi, surat izin kegiatan, kalender kegiatan, prestasi, data anggota, laporan, profil & keamanan akun, serta manajemen data eskul.
 
 Data disimpan di **PostgreSQL** (bukan lagi localStorage). Backend berupa server HTTP Node.js yang menyajikan API JSON sekaligus hasil build frontend (folder `dist/`).
 
@@ -16,7 +16,7 @@ CREATE ROLE simskul_app LOGIN PASSWORD '<password>';
 GRANT ALL PRIVILEGES ON DATABASE simskul TO simskul_app;
 ```
 
-Saat pertama dijalankan pada database yang masih kosong, backend otomatis membuat seluruh tabel dan mengisi data demo (3 eskul, 8 akun, 22 anggota, sesi, nilai, dokumentasi, dan surat izin).
+Saat pertama dijalankan pada database yang masih kosong, backend otomatis membuat seluruh tabel dan mengisi data demo (3 eskul, 8 akun, 22 anggota, sesi, nilai, dokumentasi, surat izin, dan prestasi eskul).
 
 ### 2. Konfigurasi `.env`
 
@@ -80,6 +80,8 @@ Sistem memakai **empat peran**: `admin`, `pelatih`, `ketua`, `wakasek`.
 - Menyetujui atau menolak pengajuan surat izin dengan catatan keputusan.
 - Laporan kehadiran, nilai, dan surat izin; ekspor CSV dan cetak.
 - Galeri dokumentasi lintas eskul.
+- Kalender kegiatan lintas eskul serta pencatatan prestasi dari tingkat sekolah hingga internasional.
+- Profil & keamanan akun, termasuk perubahan kata sandi.
 
 **Pelatih**
 - Dashboard eskul, tren kehadiran, dan sesi terdekat.
@@ -87,17 +89,20 @@ Sistem memakai **empat peran**: `admin`, `pelatih`, `ketua`, `wakasek`.
 - Mengelola anggota (tambah/nonaktifkan) dan mengunggah dokumentasi.
 - Mengisi nilai eskul (keaktifan 40%, sikap 30%, keterampilan 30%) serta catatan evaluasi.
 - Mengajukan surat izin kegiatan sekaligus melengkapi isi suratnya.
+- Melihat kalender kegiatan eskul, mencatat prestasi, dan memperbarui profil/kata sandi.
 
 **Ketua Eskul**
 - Melihat dashboard, sesi, anggota, dokumentasi, dan surat izin eskulnya.
 - **Mengisi presensi anggota dan kehadiran dirinya hanya ketika pelatih menandai berhalangan.** Setiap isian anggota diberi label “Pengganti” dan mencatat nama ketua sebagai pengisi.
 - Menambah anggota, mengunggah dokumentasi, dan mengajukan surat izin.
+- Melihat kalender, mencatat prestasi eskul, serta mengelola profil akun.
 - Tidak dapat mengubah nilai.
 
 **Wakasek Kesiswaan**
 - Langsung diarahkan ke daftar **Surat Izin** setelah masuk.
 - Hanya melihat surat dari pengajuan yang sudah **disetujui** atau **selesai**.
 - Mencetak surat A4 dan menandatanganinya secara basah pada kolom wakasek.
+- Menerima pusat notifikasi surat izin serta dapat memperbarui profil dan kata sandi.
 - Tidak dapat mengubah data eskul, presensi, nilai, maupun isi surat.
 
 Hak akses dijaga di tiga lapis: navigasi berbasis peran, guard rute (halaman 403), dan pemeriksaan peran di setiap endpoint API.
@@ -119,6 +124,32 @@ Daftar presensi pada detail sesi memuat dua kelompok: **pelatih & ketua** serta 
 3. Ketua mengisi status anggota dan kehadiran dirinya. Setiap entri anggota menyimpan `updatedBy`, `asSubstitute`, dan waktu perubahan.
 4. Pelatih tetap dapat mengoreksi isian; entri anggota yang diisi pelatih tidak lagi berlabel pengganti.
 5. Jejak audit terlihat pada daftar presensi, ekspor CSV, dan lini masa aktivitas.
+
+## Kalender kegiatan
+
+Halaman **Kalender Kegiatan** menyatukan seluruh agenda eskul dalam tampilan bulanan:
+
+- Sesi latihan (hijau), rentang surat izin (biru), dan prestasi (kuning) tampil langsung pada tanggalnya.
+- Navigasi bulan sebelumnya/berikutnya, tombol **Hari ini**, serta filter jenis agenda dan eskul (khusus admin).
+- Klik tanggal untuk membuka agenda harian berisi waktu, lokasi, status izin, dan tautan ke detail sesi/surat.
+- Pelatih dapat menjadwalkan sesi langsung dari tanggal yang dipilih; dialog otomatis memakai tanggal tersebut.
+
+## Prestasi eskul
+
+Halaman **Prestasi Eskul** mendokumentasikan capaian anggota:
+
+- Tingkat kompetisi: sekolah, kecamatan, kota, provinsi, nasional, dan internasional.
+- Peringkat: Juara 1–3, Harapan 1–3, atau Peserta, lengkap dengan nama peserta dan deskripsi.
+- Ringkasan jumlah prestasi, podium, capaian nasional+, dan eskul berprestasi.
+- Filter peringkat, tingkat, eskul (admin), dan pencarian; data dapat diekspor ke CSV.
+- Pelatih/ketua mencatat prestasi eskulnya sendiri, admin dapat mengelola seluruh eskul. Prestasi juga muncul di kalender, dashboard, dan pusat notifikasi.
+
+## Pusat notifikasi & profil
+
+- **Pusat notifikasi** di topbar merangkum pengingat yang relevan per peran: surat izin menunggu keputusan, surat siap ditandatangani, presensi hari ini, presensi yang dititipkan ke ketua, keputusan izin, dan prestasi baru. Status “sudah dibaca” disimpan per pengguna di perangkat.
+- **Profil & Keamanan** dapat dibuka dari avatar di topbar atau kartu pengguna di sidebar. Pengguna dapat mengubah nama, email, nomor telepon, serta kata sandi.
+- Perubahan kata sandi memverifikasi kata sandi lama, minimal 8 karakter, dan otomatis mengakhiri sesi di perangkat lain sementara sesi saat ini tetap aktif.
+- Halaman profil juga menampilkan peran, cakupan eskul, status akun, dan lima aktivitas terakhir pengguna.
 
 ## Surat izin kegiatan
 
@@ -148,7 +179,7 @@ src/                       # frontend
   App.tsx                  # rute, lazy loading, guard peran
   components/
     eskul/                 # dialog tambah/edit/hapus eskul
-    layout/                # sidebar, topbar, shell responsif
+    layout/                # sidebar, topbar, pusat notifikasi, shell responsif
     sessions/              # baris sesi, dialog buat sesi
     shared/ & ui/          # komponen dasar
   lib/

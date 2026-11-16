@@ -1,7 +1,7 @@
 import {
-  Bell,
   CalendarCheck2,
   CalendarDays,
+  CalendarRange,
   FileSignature,
   GraduationCap,
   Images,
@@ -10,16 +10,19 @@ import {
   Menu,
   Moon,
   School,
+  Settings,
   Sun,
   TrendingUp,
+  Trophy,
   UserCog,
   Users,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NotificationCenter } from '@/components/layout/notification-center'
 import { Avatar } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Logo } from '@/components/shared/brand'
 import { useTheme } from '@/hooks/use-theme'
 import { ACADEMIC_YEAR, ROLE_LABELS, SCHOOL_NAME } from '@/lib/constants'
@@ -39,7 +42,9 @@ const navByRole: Record<Role, NavItem[]> = {
     { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/eskul', label: 'Data Eskul', icon: School },
     { to: '/sesi', label: 'Sesi & Presensi', icon: CalendarCheck2 },
+    { to: '/kalender', label: 'Kalender Kegiatan', icon: CalendarRange },
     { to: '/surat', label: 'Surat Izin', icon: FileSignature },
+    { to: '/prestasi', label: 'Prestasi Eskul', icon: Trophy },
     { to: '/laporan', label: 'Laporan & Nilai', icon: TrendingUp },
     { to: '/dokumentasi', label: 'Galeri Eskul', icon: Images },
     { to: '/admin', label: 'Manajemen Pengguna', icon: UserCog },
@@ -47,15 +52,19 @@ const navByRole: Record<Role, NavItem[]> = {
   pelatih: [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/sesi', label: 'Sesi & Presensi', icon: CalendarCheck2 },
+    { to: '/kalender', label: 'Kalender Kegiatan', icon: CalendarRange },
     { to: '/anggota', label: 'Data Anggota', icon: Users },
     { to: '/nilai', label: 'Penilaian', icon: GraduationCap },
+    { to: '/prestasi', label: 'Prestasi Eskul', icon: Trophy },
     { to: '/dokumentasi', label: 'Dokumentasi', icon: Images },
     { to: '/surat', label: 'Surat Izin', icon: FileSignature },
   ],
   ketua: [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/sesi', label: 'Sesi & Presensi', icon: CalendarCheck2 },
+    { to: '/kalender', label: 'Kalender Kegiatan', icon: CalendarRange },
     { to: '/anggota', label: 'Data Anggota', icon: Users },
+    { to: '/prestasi', label: 'Prestasi Eskul', icon: Trophy },
     { to: '/dokumentasi', label: 'Dokumentasi', icon: Images },
     { to: '/surat', label: 'Surat Izin', icon: FileSignature },
   ],
@@ -65,13 +74,16 @@ const navByRole: Record<Role, NavItem[]> = {
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
   '/sesi': 'Sesi & Presensi',
+  '/kalender': 'Kalender Kegiatan',
   '/anggota': 'Data Anggota',
   '/nilai': 'Penilaian',
+  '/prestasi': 'Prestasi Eskul',
   '/dokumentasi': 'Dokumentasi',
   '/surat': 'Surat Izin',
   '/laporan': 'Laporan & Nilai',
   '/eskul': 'Data Eskul',
   '/admin': 'Manajemen Pengguna',
+  '/profil': 'Profil & Keamanan',
 }
 
 function getPageTitle(pathname: string) {
@@ -190,14 +202,35 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="shrink-0 border-t border-sidebar-border p-3">
         <div className="rounded-2xl border border-border/70 bg-card p-3 shadow-sm">
           <div className="flex items-center gap-2.5">
-            <Avatar name={user.name} id={user.id} size="sm" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-bold text-foreground">{user.name}</p>
-              <p className="mt-0.5 truncate text-[10px] font-medium text-muted-foreground">
-                {ROLE_LABELS[user.role]}
-                {userEskul ? ` · ${userEskul.name}` : ''}
-              </p>
-            </div>
+            <Link
+              to="/profil"
+              onClick={onNavigate}
+              className="group flex min-w-0 flex-1 items-center gap-2.5"
+              title="Buka profil"
+            >
+              <Avatar name={user.name} id={user.id} size="sm" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold text-foreground group-hover:text-primary">
+                  {user.name}
+                </p>
+                <p className="mt-0.5 truncate text-[10px] font-medium text-muted-foreground">
+                  {ROLE_LABELS[user.role]}
+                  {userEskul ? ` · ${userEskul.name}` : ''}
+                </p>
+              </div>
+            </Link>
+            <Link
+              to="/profil"
+              onClick={onNavigate}
+              title="Profil & keamanan"
+              aria-label="Profil & keamanan"
+              className={cn(
+                buttonVariants({ variant: 'ghost', size: 'iconSm' }),
+                'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Settings />
+            </Link>
             <Button
               variant="ghost"
               size="iconSm"
@@ -226,23 +259,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const user = useCurrentUser()
   const eskul = useAppStore((state) => state.eskul)
-  const permits = useAppStore((state) => state.permits)
   const { theme, toggleTheme } = useTheme()
   const location = useLocation()
   const title = getPageTitle(location.pathname)
 
-  const pendingCount = useMemo(() => {
-    if (!user) return 0
-    return permits.filter(
-      (permit) =>
-        permit.status === 'diajukan' &&
-        (user.role === 'admin' || permit.eskulId === user.eskulId),
-    ).length
-  }, [permits, user])
-
   if (!user) return null
   const userEskul = eskul.find((item) => item.id === user.eskulId)
-  const notificationTarget = '/surat'
 
   return (
     <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 backdrop-blur-xl print:hidden">
@@ -269,19 +291,7 @@ function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
             <CalendarDays className="size-3.5 text-primary" />
             {TODAY_LABEL}
           </span>
-          <Link
-            to={notificationTarget}
-            className="relative flex size-9 items-center justify-center rounded-xl border border-border/70 bg-card text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Notifikasi surat izin"
-            title="Notifikasi surat izin"
-          >
-            <Bell className="size-[17px]" />
-            {pendingCount > 0 ? (
-              <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white ring-2 ring-background">
-                {pendingCount}
-              </span>
-            ) : null}
-          </Link>
+          <NotificationCenter key={user.id} />
           <Button
             variant="outline"
             size="iconSm"
@@ -291,22 +301,22 @@ function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
           >
             {theme === 'dark' ? <Sun /> : <Moon />}
           </Button>
-          <div className="ml-0.5 hidden items-center gap-2.5 border-l border-border/70 pl-3 sm:flex">
+          <Link
+            to="/profil"
+            className="group ml-0.5 hidden items-center gap-2.5 border-l border-border/70 pl-3 sm:flex"
+            title="Buka profil & keamanan"
+          >
             <Avatar name={user.name} id={user.id} size="sm" />
             <div className="max-w-32">
-              <p className="truncate text-xs font-bold leading-tight text-foreground">
+              <p className="truncate text-xs font-bold leading-tight text-foreground group-hover:text-primary">
                 {firstName(user.name)}
               </p>
               <p className="mt-0.5 truncate text-[10px] leading-tight text-muted-foreground">
                 {userEskul ? userEskul.name : user.role === 'admin' ? 'Administrasi' : 'Kesiswaan'}
               </p>
             </div>
-          </div>
-          <Link
-            to={notificationTarget}
-            className="sm:hidden"
-            aria-label="Profil dan notifikasi"
-          >
+          </Link>
+          <Link to="/profil" className="sm:hidden" aria-label="Buka profil">
             <Avatar name={user.name} id={user.id} size="sm" />
           </Link>
         </div>

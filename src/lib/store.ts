@@ -3,9 +3,11 @@ import { create } from 'zustand'
 import { api, ApiError, apiErrorMessage } from './api'
 import { buildDefaultPermitLetter, nextPermitLetterSequence } from './permit-letter'
 import type {
+  Achievement,
   AttendanceStatus,
   EskulPatch,
   Grade,
+  NewAchievementInput,
   NewDocumentationInput,
   NewEskulInput,
   NewPermitInput,
@@ -69,6 +71,10 @@ interface AppStore extends SeedData {
   saveGrade: (studentId: string, semester: string, patch: GradePatch, actorId: string) => void
   addDocumentation: (input: NewDocumentationInput) => void
   deleteDocumentation: (documentationId: string, actorId: string) => void
+  addAchievement: (input: NewAchievementInput, actorId: string) => void
+  deleteAchievement: (achievementId: string, actorId: string) => void
+  updateProfile: (patch: { name: string; email: string; phone?: string }) => Promise<User>
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>
   createPermit: (input: NewPermitInput) => string
   reviewPermit: (
     permitId: string,
@@ -99,6 +105,7 @@ function emptyData(): SeedData {
     grades: [],
     documentation: [],
     permits: [],
+    achievements: [],
     activities: [],
   }
 }
@@ -446,6 +453,49 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     const eskulName = get().eskul.find((item) => item.id === doc.eskulId)?.name ?? 'Eskul'
     get().addActivity(actorId, 'Menghapus dokumentasi', `${eskulName} · ${doc.title}`)
     sync(api.delete(`/documentation/${encodeURIComponent(documentationId)}`))
+  },
+
+  addAchievement: (input, actorId) => {
+    const achievement: Achievement = {
+      ...input,
+      id: uid('ach'),
+      createdBy: actorId,
+      createdAt: new Date().toISOString(),
+    }
+    set((state) => ({ achievements: [achievement, ...state.achievements] }))
+    const eskulName = get().eskul.find((item) => item.id === input.eskulId)?.name ?? 'Eskul'
+    get().addActivity(actorId, 'Menambahkan prestasi', `${eskulName} · ${input.title}`)
+    sync(api.post('/achievements', achievement))
+  },
+
+  deleteAchievement: (achievementId, actorId) => {
+    const achievement = get().achievements.find((item) => item.id === achievementId)
+    if (!achievement) return
+    set((state) => ({
+      achievements: state.achievements.filter((item) => item.id !== achievementId),
+    }))
+    const eskulName =
+      get().eskul.find((item) => item.id === achievement.eskulId)?.name ?? 'Eskul'
+    get().addActivity(actorId, 'Menghapus prestasi', `${eskulName} · ${achievement.title}`)
+    sync(api.delete(`/achievements/${encodeURIComponent(achievementId)}`))
+  },
+
+  updateProfile: async (patch) => {
+    const result = await api.patch<{ user: User }>('/profile', patch)
+    set((state) => ({
+      users: state.users.map((user) => (user.id === result.user.id ? result.user : user)),
+      currentUser: result.user,
+    }))
+    get().addActivity(result.user.id, 'Memperbarui profil', result.user.name)
+    return result.user
+  },
+
+  changePassword: async (currentPassword, newPassword) => {
+    await api.post('/profile/password', { currentPassword, newPassword })
+    const current = get().currentUser
+    if (current) {
+      get().addActivity(current.id, 'Mengganti kata sandi', 'Keamanan akun diperbarui')
+    }
   },
 
   createPermit: (input) => {

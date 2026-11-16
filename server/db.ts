@@ -6,6 +6,9 @@ import pg from 'pg'
 import { buildDefaultPermitLetter } from '../src/lib/permit-letter.ts'
 import { createSeedData } from '../src/lib/seed.ts'
 import type {
+  Achievement,
+  AchievementLevel,
+  AchievementRank,
   Activity,
   AttendanceEntry,
   AttendanceStatus,
@@ -282,6 +285,20 @@ const SCHEMA = `
     updated_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS achievements (
+    id TEXT PRIMARY KEY,
+    eskul_id TEXT NOT NULL REFERENCES eskul(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    event TEXT NOT NULL,
+    level TEXT NOT NULL,
+    rank TEXT NOT NULL,
+    date TEXT NOT NULL,
+    participants TEXT NOT NULL DEFAULT '',
+    description TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS activities (
     id TEXT PRIMARY KEY,
     at TEXT NOT NULL,
@@ -311,6 +328,7 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_grades_student ON grades (student_id);
   CREATE INDEX IF NOT EXISTS idx_permits_status ON permits (status);
   CREATE INDEX IF NOT EXISTS idx_permit_letters_date ON permit_letters (letter_date);
+  CREATE INDEX IF NOT EXISTS idx_achievements_eskul ON achievements (eskul_id, date);
   CREATE INDEX IF NOT EXISTS idx_activities_at ON activities (at);
   CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions (user_id);
 `
@@ -445,6 +463,20 @@ interface PermitLetterRow {
   signer_role: string
   updated_by: string
   updated_at: string
+}
+
+interface AchievementRow {
+  id: string
+  eskul_id: string
+  title: string
+  event: string
+  level: AchievementLevel
+  rank: AchievementRank
+  date: string
+  participants: string
+  description: string | null
+  created_by: string
+  created_at: string
 }
 
 interface ActivityRow {
@@ -586,6 +618,22 @@ function toPermitLetter(row: PermitLetterRow): PermitLetter {
   }
 }
 
+function toAchievement(row: AchievementRow): Achievement {
+  return {
+    id: row.id,
+    eskulId: row.eskul_id,
+    title: row.title,
+    event: row.event,
+    level: row.level,
+    rank: row.rank,
+    date: row.date,
+    participants: row.participants,
+    description: row.description ?? undefined,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+  }
+}
+
 function toActivity(row: ActivityRow): Activity {
   return {
     id: row.id,
@@ -601,6 +649,7 @@ const STAFF_KETUA_MIGRATION = '2026-10-29-staff-attendance-ketua'
 const WAKASEK_ROLE_MIGRATION = '2026-10-29-wakasek-role'
 const WAKASEK_ACCOUNT_MIGRATION = '2026-10-29-wakasek-account'
 const PERMIT_LETTERS_MIGRATION = '2026-10-29-permit-letters'
+const ACHIEVEMENTS_MIGRATION = '2026-11-15-achievements'
 
 const WAKASEK_EMAIL = 'wakasek@simskul.sch.id'
 
@@ -762,6 +811,33 @@ async function migratePermitLetters() {
 }
 
 /**
+ * Adds the achievements feature to existing databases. Fresh installations
+ * receive the demo achievements through the regular seed; older databases get
+ * the demo rows only when the new table is still empty and the demo eskul exist.
+ */
+async function migrateAchievements() {
+  if (await migrationApplied(ACHIEVEMENTS_MIGRATION)) return
+  await transaction(async (tx) => {
+    const count = (await tx
+      .prepare('SELECT COUNT(*)::int AS total FROM achievements')
+      .get()) as unknown as { total: number } | undefined
+    if ((count?.total ?? 0) === 0) {
+      const eskulRows = (await tx
+        .prepare('SELECT id FROM eskul')
+        .all()) as unknown as { id: string }[]
+      const eskulIds = new Set(eskulRows.map((row) => row.id))
+      const demoAchievements = createSeedData().achievements.filter((achievement) =>
+        eskulIds.has(achievement.eskulId),
+      )
+      if (demoAchievements.length > 0) {
+        await insertAchievementRows(demoAchievements, tx)
+      }
+    }
+    await recordMigration(tx, ACHIEVEMENTS_MIGRATION)
+  })
+}
+
+/**
  * Backfills staff attendance once for databases created before staff
  * attendance existed. Migration markers prevent new coach/ketua assignments
  * from rewriting historical sessions on every server start.
@@ -811,6 +887,7 @@ export function ready(): Promise<boolean> {
       await migrateWakasekRole()
       await migrateWakasekAccount()
       await migratePermitLetters()
+      await migrateAchievements()
       return seeded
     })().catch((error) => {
       readyPromise = null
@@ -900,6 +977,30 @@ async function insertUsers(seedUsers: User[], tx?: ExecutorLike) {
       1,
       now,
       now,
+    )
+  }
+}
+
+async function insertAchievementRows(achievements: Achievement[], tx?: ExecutorLike) {
+  const store = tx ?? db
+  const insertAchievement = store.prepare(
+    `INSERT INTO achievements
+      (id, eskul_id, title, event, level, rank, date, participants, description, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+  for (const achievement of achievements) {
+    await insertAchievement.run(
+      achievement.id,
+      achievement.eskulId,
+      achievement.title,
+      achievement.event,
+      achievement.level,
+      achievement.rank,
+      achievement.date,
+      achievement.participants,
+      achievement.description ?? null,
+      achievement.createdBy,
+      achievement.createdAt,
     )
   }
 }
@@ -1083,6 +1184,8 @@ async function insertOperationalData(seed: SeedData, tx?: ExecutorLike) {
     }
   }
 
+  await insertAchievementRows(seed.achievements, tx)
+
   const insertActivity = store.prepare(
     'INSERT INTO activities (id, at, user_id, action, detail) VALUES (?, ?, ?, ?, ?)',
   )
@@ -1194,12 +1297,27 @@ export async function readState(): Promise<SeedData> {
     return letter ? { ...permit, letter } : permit
   })
 
+  const achievementRows = (await db
+    .prepare('SELECT * FROM achievements ORDER BY date DESC, created_at DESC')
+    .all()) as unknown as AchievementRow[]
+  const achievements = achievementRows.map(toAchievement)
+
   const activityRows = (await db
     .prepare('SELECT * FROM activities ORDER BY at DESC LIMIT 100')
     .all()) as unknown as ActivityRow[]
   const activities = activityRows.map(toActivity)
 
-  return { users, eskul, students, sessions, grades, documentation, permits, activities }
+  return {
+    users,
+    eskul,
+    students,
+    sessions,
+    grades,
+    documentation,
+    permits,
+    achievements,
+    activities,
+  }
 }
 
 export async function resetDemoData(actorId: string) {
@@ -1213,6 +1331,7 @@ export async function resetDemoData(actorId: string) {
       DELETE FROM documentation;
       DELETE FROM permit_letters;
       DELETE FROM permits;
+      DELETE FROM achievements;
       DELETE FROM activities;
       DELETE FROM sessions;
       DELETE FROM students;

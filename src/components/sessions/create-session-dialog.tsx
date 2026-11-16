@@ -16,6 +16,7 @@ interface CreateSessionDialogProps {
   eskul: Eskul
   userId: string
   onCreated: (session: Session) => void
+  initialDate?: string
 }
 
 function scheduleParts(time: string) {
@@ -29,11 +30,12 @@ export function CreateSessionDialog({
   eskul,
   userId,
   onCreated,
+  initialDate,
 }: CreateSessionDialogProps) {
   const addSession = useAppStore((state) => state.addSession)
   const defaultSchedule = scheduleParts(eskul.time)
   const [topic, setTopic] = useState('')
-  const [date, setDate] = useState(todayISO())
+  const [date, setDate] = useState(initialDate ?? todayISO())
   const [startTime, setStartTime] = useState(defaultSchedule.start)
   const [endTime, setEndTime] = useState(defaultSchedule.end)
   const [location, setLocation] = useState(eskul.location)

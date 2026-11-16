@@ -5,6 +5,8 @@ import { dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { read, utils } from 'xlsx'
 import type {
+  AchievementLevel,
+  AchievementRank,
   AttendanceStatus,
   EskulColor,
   Gender,
@@ -234,6 +236,35 @@ function parsePermitType(value: unknown): PermitType {
   throw new HttpError(400, 'Jenis perizinan tidak valid.')
 }
 
+function parseAchievementLevel(value: unknown): AchievementLevel {
+  if (
+    value === 'sekolah' ||
+    value === 'kecamatan' ||
+    value === 'kota' ||
+    value === 'provinsi' ||
+    value === 'nasional' ||
+    value === 'internasional'
+  ) {
+    return value
+  }
+  throw new HttpError(400, 'Tingkat prestasi tidak valid.')
+}
+
+function parseAchievementRank(value: unknown): AchievementRank {
+  if (
+    value === 'juara_1' ||
+    value === 'juara_2' ||
+    value === 'juara_3' ||
+    value === 'harapan_1' ||
+    value === 'harapan_2' ||
+    value === 'harapan_3' ||
+    value === 'peserta'
+  ) {
+    return value
+  }
+  throw new HttpError(400, 'Peringkat prestasi tidak valid.')
+}
+
 function parseScore(value: unknown, label: string) {
   if (value === undefined || value === null || value === '') return null
   const score = typeof value === 'number' ? value : Number(value)
@@ -454,6 +485,54 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
   if (method === 'GET' && pathname === '/api/auth/me') {
     const user = await requireAuth(req)
     sendJson(res, 200, { user })
+    return
+  }
+
+  if (method === 'PATCH' && pathname === '/api/profile') {
+    const user = await requireAuth(req)
+    const current = await getUserById(user.id)
+    if (!current) throw new HttpError(404, 'Pengguna tidak ditemukan.')
+    const body = await readJson(req)
+    const name = body.name === undefined ? current.name : requireText(body.name, 'Nama lengkap', 200)
+    const email = body.email === undefined ? current.email : requireEmail(body.email)
+    const phone =
+      body.phone === undefined
+        ? (current.phone ?? null)
+        : (optionalText(body.phone, 50) ?? null)
+    if (await emailInUse(email, user.id)) {
+      throw new HttpError(409, 'Email sudah digunakan pengguna lain.')
+    }
+    await db
+      .prepare('UPDATE users SET name = ?, email = ?, phone = ?, updated_at = ? WHERE id = ?')
+      .run(name, email, phone, new Date().toISOString(), user.id)
+    recordActivity(user.id, 'Memperbarui profil', name)
+    sendJson(res, 200, { user: await publicUserById(user.id) })
+    return
+  }
+
+  if (method === 'POST' && pathname === '/api/profile/password') {
+    const user = await requireAuth(req)
+    const current = await getUserById(user.id)
+    if (!current) throw new HttpError(404, 'Pengguna tidak ditemukan.')
+    const body = await readJson(req)
+    const currentPassword =
+      typeof body.currentPassword === 'string' ? body.currentPassword : ''
+    if (!verifyPassword(currentPassword, current.password_hash)) {
+      throw new HttpError(400, 'Kata sandi saat ini tidak sesuai.')
+    }
+    const newPassword = requirePassword(body.newPassword)
+    if (verifyPassword(newPassword, current.password_hash)) {
+      throw new HttpError(400, 'Kata sandi baru harus berbeda dari kata sandi saat ini.')
+    }
+    await db
+      .prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+      .run(hashPassword(newPassword), new Date().toISOString(), user.id)
+    // Invalidate every existing session, then keep the current device signed in.
+    await db.prepare('DELETE FROM auth_sessions WHERE user_id = ?').run(user.id)
+    const token = await createSessionForUser(user.id)
+    res.setHeader('Set-Cookie', sessionCookieHeader(token, Math.floor(sessionTtlMs / 1000)))
+    recordActivity(user.id, 'Mengganti kata sandi', 'Keamanan akun diperbarui')
+    sendJson(res, 200, { ok: true })
     return
   }
 
@@ -1193,6 +1272,84 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       user.id,
       'Menghapus dokumentasi',
       `${await eskulName(doc.eskul_id)} · ${doc.title}`,
+    )
+    sendJson(res, 200, { ok: true })
+    return
+  }
+
+  if (method === 'POST' && pathname === '/api/achievements') {
+    const user = await requireAuth(req)
+    requireRole(user, ['admin', 'pelatih', 'ketua'])
+    const body = await readJson(req)
+    const eskulId = requireText(body.eskulId, 'Eskul', 100)
+    assertEskulAccess(user, eskulId, ['pelatih', 'ketua'])
+    await ensureEskulExists(eskulId)
+    const title = requireText(body.title, 'Judul prestasi', 200)
+    const event = requireText(body.event, 'Nama kegiatan', 200)
+    const level = parseAchievementLevel(body.level)
+    const rank = parseAchievementRank(body.rank)
+    const date = requireDate(body.date, 'Tanggal prestasi')
+    const participants = requireText(body.participants, 'Nama peserta', 500)
+    const description = optionalText(body.description, 3000)
+    const id = safeId(body.id, 'ach')
+    const now = new Date().toISOString()
+    await db
+      .prepare(
+        `INSERT INTO achievements
+          (id, eskul_id, title, event, level, rank, date, participants, description, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        eskulId,
+        title,
+        event,
+        level,
+        rank,
+        date,
+        participants,
+        description ?? null,
+        user.id,
+        now,
+      )
+    recordActivity(user.id, 'Menambahkan prestasi', `${await eskulName(eskulId)} · ${title}`)
+    sendJson(res, 201, {
+      achievement: {
+        id,
+        eskulId,
+        title,
+        event,
+        level,
+        rank,
+        date,
+        participants,
+        description,
+        createdBy: user.id,
+        createdAt: now,
+      },
+    })
+    return
+  }
+
+  const achievementMatch = pathname.match(/^\/api\/achievements\/([^/]+)$/)
+  if (method === 'DELETE' && achievementMatch) {
+    const user = await requireAuth(req)
+    requireRole(user, ['admin', 'pelatih', 'ketua'])
+    const achievementId = decodeURIComponent(achievementMatch[1])
+    const achievement = await db
+      .prepare('SELECT id, eskul_id, title FROM achievements WHERE id = ? LIMIT 1')
+      .get(achievementId) as unknown as
+      | { id: string; eskul_id: string; title: string }
+      | undefined
+    if (!achievement) throw new HttpError(404, 'Prestasi tidak ditemukan.')
+    if (user.role !== 'admin' && user.eskulId !== achievement.eskul_id) {
+      throw new HttpError(403, 'Anda hanya dapat menghapus prestasi eskul Anda sendiri.')
+    }
+    await db.prepare('DELETE FROM achievements WHERE id = ?').run(achievementId)
+    recordActivity(
+      user.id,
+      'Menghapus prestasi',
+      `${await eskulName(achievement.eskul_id)} · ${achievement.title}`,
     )
     sendJson(res, 200, { ok: true })
     return

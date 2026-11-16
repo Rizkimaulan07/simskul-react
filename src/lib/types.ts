@@ -10,6 +10,23 @@ export type PermitType = 'lomba' | 'latihan' | 'kegiatan_luar' | 'fasilitas' | '
 
 export type Gender = 'L' | 'P'
 
+export type AchievementLevel =
+  | 'sekolah'
+  | 'kecamatan'
+  | 'kota'
+  | 'provinsi'
+  | 'nasional'
+  | 'internasional'
+
+export type AchievementRank =
+  | 'juara_1'
+  | 'juara_2'
+  | 'juara_3'
+  | 'harapan_1'
+  | 'harapan_2'
+  | 'harapan_3'
+  | 'peserta'
+
 export interface User {
   id: string
   name: string
@@ -145,6 +162,31 @@ export interface Permit {
   letter?: PermitLetter
 }
 
+export interface Achievement {
+  id: string
+  eskulId: string
+  title: string
+  event: string
+  level: AchievementLevel
+  rank: AchievementRank
+  date: string
+  participants: string
+  description?: string
+  createdBy: string
+  createdAt: string
+}
+
+export interface NewAchievementInput {
+  eskulId: string
+  title: string
+  event: string
+  level: AchievementLevel
+  rank: AchievementRank
+  date: string
+  participants: string
+  description?: string
+}
+
 export interface Activity {
   id: string
   at: string
@@ -201,6 +243,7 @@ export interface SeedData {
   grades: Grade[]
   documentation: Documentation[]
   permits: Permit[]
+  achievements: Achievement[]
   activities: Activity[]
 }
 
