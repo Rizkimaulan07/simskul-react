@@ -2,9 +2,13 @@ import { ChevronDown } from 'lucide-react'
 import type { ComponentProps } from 'react'
 import { cn } from '@/lib/utils'
 
-export function Select({ className, children, ...props }: ComponentProps<'select'>) {
+interface SelectProps extends ComponentProps<'select'> {
+  wrapperClassName?: string
+}
+
+export function Select({ className, wrapperClassName, children, ...props }: SelectProps) {
   return (
-    <div className="relative">
+    <div className={cn('relative', wrapperClassName)}>
       <select
         className={cn(
           'flex h-10 w-full appearance-none rounded-xl border border-input bg-card px-3.5 pr-9 text-sm text-foreground shadow-sm transition-colors focus-visible:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50',

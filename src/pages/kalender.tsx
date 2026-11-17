@@ -199,7 +199,7 @@ export function CalendarPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           label="Sesi bulan ini"
           value={monthSessions.length}
@@ -234,7 +234,7 @@ export function CalendarPage() {
         <Card className="overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-border/60 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
                 <Button
                   variant="outline"
                   size="iconSm"
@@ -243,7 +243,7 @@ export function CalendarPage() {
                 >
                   <ChevronLeft />
                 </Button>
-                <p className="min-w-40 text-center text-sm font-bold capitalize text-foreground">
+                <p className="min-w-0 flex-1 truncate text-center text-sm font-bold capitalize text-foreground sm:min-w-40 sm:flex-none">
                   {monthLabel(cursor.year, cursor.month)}
                 </p>
                 <Button
@@ -262,6 +262,7 @@ export function CalendarPage() {
                 <Select
                   value={eskulFilter}
                   onChange={(event) => setEskulFilter(event.target.value)}
+                  wrapperClassName="w-full sm:w-auto"
                   className="h-9 w-full text-xs sm:w-44"
                   aria-label="Filter eskul"
                 >

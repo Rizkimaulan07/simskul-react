@@ -18,8 +18,8 @@ export function Tabs({ items, value, onValueChange, className, fullWidth }: Tabs
   return (
     <div
       className={cn(
-        'inline-flex flex-wrap items-center gap-1 rounded-xl border border-border/70 bg-muted/45 p-1',
-        fullWidth && 'flex w-full',
+        'no-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-border/70 bg-muted/45 p-1',
+        fullWidth ? 'flex w-full' : 'w-fit',
         className,
       )}
       role="tablist"
@@ -35,7 +35,7 @@ export function Tabs({ items, value, onValueChange, className, fullWidth }: Tabs
             onClick={() => onValueChange(item.value)}
             className={cn(
               'inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-muted-foreground transition-all hover:text-foreground',
-              fullWidth && 'flex-1',
+              fullWidth ? 'flex-1' : 'shrink-0',
               active && 'bg-card text-foreground shadow-sm ring-1 ring-border/70',
             )}
           >

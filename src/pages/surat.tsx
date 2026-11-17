@@ -158,7 +158,7 @@ export function PermitLettersPage() {
       <div
         className={cn(
           'grid gap-3',
-          isWakasek ? 'sm:grid-cols-3' : 'sm:grid-cols-2 xl:grid-cols-4',
+          isWakasek ? 'sm:grid-cols-3' : 'grid-cols-2 xl:grid-cols-4',
         )}
       >
         <StatCard
@@ -200,12 +200,13 @@ export function PermitLettersPage() {
           onValueChange={(value) => setStatusFilter(value as StatusFilter)}
         />
         <div className="relative w-full lg:max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Cari kegiatan, eskul, atau nomor surat"
-            className="pl-9"
+            className="h-9 pl-9 text-xs"
+            aria-label="Cari surat izin"
           />
         </div>
       </div>

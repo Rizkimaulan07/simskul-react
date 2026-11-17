@@ -191,7 +191,7 @@ export function ReportsPage() {
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           label="Kehadiran global"
           value={`${overall.rate}%`}
@@ -270,6 +270,7 @@ export function ReportsPage() {
               onChange={(event) => setSearch(event.target.value)}
               placeholder={tab === 'surat' ? 'Cari kegiatan...' : 'Cari anggota...'}
               className="h-9 pl-9 text-xs"
+              aria-label="Cari pada laporan"
             />
           </div>
         </div>

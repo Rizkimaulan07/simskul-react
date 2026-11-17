@@ -159,7 +159,7 @@ export function GradesPage() {
                 setSemester(event.target.value)
                 setNoteTarget(null)
               }}
-              className="w-44 text-xs"
+              className="w-full text-xs sm:w-44"
               aria-label="Pilih semester"
             >
               {SEMESTER_OPTIONS.map((option) => (
@@ -176,7 +176,7 @@ export function GradesPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           label="Rata-rata nilai"
           value={gradedRows.length ? average : '—'}

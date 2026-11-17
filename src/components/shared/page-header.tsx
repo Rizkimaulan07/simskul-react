@@ -27,12 +27,16 @@ export function PageHeader({ eyebrow, title, description, actions, className }: 
           {title}
         </h1>
         {description ? (
-          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          <p className="mt-1.5 max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground">
             {description}
           </p>
         ) : null}
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2 print:hidden">{actions}</div> : null}
+      {actions ? (
+        <div className="flex w-full flex-wrap items-center gap-2 [&>*]:flex-1 sm:w-auto sm:justify-end sm:[&>*]:flex-none print:hidden">
+          {actions}
+        </div>
+      ) : null}
     </div>
   )
 }

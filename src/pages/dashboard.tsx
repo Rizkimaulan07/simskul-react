@@ -455,7 +455,7 @@ export function DashboardPage() {
 
       {isSupervisor ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatCard
               label="Eskul aktif"
               value={store.eskul.length}
@@ -697,7 +697,7 @@ export function DashboardPage() {
             </div>
           ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatCard
               label="Anggota aktif"
               value={members.length}

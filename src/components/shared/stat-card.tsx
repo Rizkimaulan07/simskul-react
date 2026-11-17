@@ -48,32 +48,32 @@ export function StatCard({
   className,
 }: StatCardProps) {
   return (
-    <Card className={cn('group relative overflow-hidden p-5', className)}>
+    <Card className={cn('group relative overflow-hidden p-4 sm:p-5', className)}>
       <div
         className={cn(
           'absolute inset-x-0 top-0 h-0.5 opacity-70',
           accents[accent].bar,
         )}
       />
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2.5 sm:gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+          <p className="text-[10px] font-semibold uppercase leading-snug tracking-[0.09em] text-muted-foreground sm:text-[11px]">
             {label}
           </p>
-          <p className="mt-2 text-[26px] font-extrabold leading-none tracking-tight text-foreground">
+          <p className="mt-2 text-[24px] font-extrabold leading-none tracking-tight text-foreground tabular-nums sm:text-[26px]">
             {value}
           </p>
         </div>
         <span
           className={cn(
-            'flex size-10 shrink-0 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-105',
+            'flex size-9 shrink-0 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-105 sm:size-10',
             accents[accent].icon,
           )}
         >
-          <Icon className="size-[18px]" />
+          <Icon className="size-4 sm:size-[18px]" />
         </span>
       </div>
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-3 flex min-w-0 items-center gap-2">
         {trend ? (
           <span
             className={cn(

@@ -135,7 +135,7 @@ export function DocumentationPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatCard
           label="Total dokumentasi"
           value={scopedDocs.length}
@@ -151,6 +151,7 @@ export function DocumentationPage() {
           accent="sky"
         />
         <StatCard
+          className="col-span-2 sm:col-span-1"
           label={user.role === 'admin' ? 'Eskul tercakup' : 'Sesi terdokumentasi'}
           value={
             user.role === 'admin'

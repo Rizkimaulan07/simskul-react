@@ -18,7 +18,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { NotificationCenter } from '@/components/layout/notification-center'
 import { Avatar } from '@/components/ui/avatar'
@@ -148,7 +148,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </div>
 
-      <nav className="mt-6 flex-1 overflow-y-auto px-3 pb-4">
+      <nav
+        aria-label="Navigasi utama"
+        className="scrollbar-soft mt-6 min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-4"
+      >
         <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/70">
           Menu Utama
         </p>
@@ -256,7 +259,13 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   )
 }
 
-function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
+function Topbar({
+  onOpenMenu,
+  menuOpen,
+}: {
+  onOpenMenu: () => void
+  menuOpen: boolean
+}) {
   const user = useCurrentUser()
   const eskul = useAppStore((state) => state.eskul)
   const { theme, toggleTheme } = useTheme()
@@ -275,11 +284,13 @@ function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
             size="iconSm"
             className="lg:hidden"
             onClick={onOpenMenu}
-            aria-label="Buka menu"
+            aria-label="Buka menu navigasi"
+            aria-expanded={menuOpen}
+            aria-controls="mobile-sidebar"
           >
             <Menu />
           </Button>
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex min-w-0 items-center gap-2 text-xs">
             <span className="hidden font-semibold text-muted-foreground sm:inline">SIMSKUL</span>
             <span className="hidden text-muted-foreground/40 sm:inline">/</span>
             <span className="truncate font-bold text-foreground">{title}</span>
@@ -328,31 +339,46 @@ function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
 export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
+  useEffect(() => {
+    if (!mobileOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileOpen(false)
+    }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [mobileOpen])
+
   return (
     <div className="min-h-dvh bg-background print:bg-white">
       <div
         className={cn(
-          'fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-sm transition-opacity lg:hidden',
+          'fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-sm transition-opacity duration-300 lg:hidden',
           mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
         onClick={() => setMobileOpen(false)}
         aria-hidden="true"
       />
       <aside
+        id="mobile-sidebar"
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-[288px] border-r border-sidebar-border bg-sidebar shadow-2xl transition-transform duration-300 print:hidden lg:translate-x-0 lg:shadow-none',
+          'fixed inset-y-0 left-0 z-50 w-[288px] max-w-[85vw] border-r border-sidebar-border bg-sidebar shadow-2xl transition-transform duration-300 ease-out print:hidden lg:max-w-none lg:translate-x-0 lg:shadow-none',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        {mobileOpen ? <SidebarContent onNavigate={() => setMobileOpen(false)} /> : <SidebarContent />}
+        <SidebarContent onNavigate={mobileOpen ? () => setMobileOpen(false) : undefined} />
       </aside>
 
       <div className="lg:pl-[288px] print:pl-0">
-        <Topbar onOpenMenu={() => setMobileOpen(true)} />
-        <main className="page-enter mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <Topbar onOpenMenu={() => setMobileOpen(true)} menuOpen={mobileOpen} />
+        <main className="page-enter mx-auto w-full max-w-[1440px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
           <Outlet />
         </main>
-        <footer className="mx-auto flex w-full max-w-[1440px] flex-col items-center justify-between gap-2 border-t border-border/60 px-4 py-5 text-[10px] text-muted-foreground sm:flex-row sm:px-6 lg:px-8 print:hidden">
+        <footer className="mx-auto flex w-full max-w-[1440px] flex-col items-center justify-between gap-2 border-t border-border/60 px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-center text-[10px] text-muted-foreground sm:flex-row sm:px-6 sm:text-left lg:px-8 print:hidden">
           <p>
             <span className="font-bold text-foreground">SIMSKUL</span> · Sistem Informasi Manajemen
             Eskul

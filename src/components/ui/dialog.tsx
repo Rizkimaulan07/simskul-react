@@ -64,11 +64,14 @@ export function Dialog({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         className={cn(
-          'page-enter relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border/70 bg-card shadow-2xl sm:rounded-2xl',
+          'page-enter relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border/70 bg-card shadow-2xl sm:max-h-[88dvh] sm:rounded-2xl',
           sizeClasses[size],
           className,
         )}
       >
+        <div className="flex justify-center pt-2.5 sm:hidden">
+          <span aria-hidden="true" className="h-1.5 w-10 rounded-full bg-border" />
+        </div>
         <div className="flex items-start gap-4 border-b border-border/70 px-5 py-4 sm:px-6">
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="text-base font-semibold tracking-tight text-foreground">
@@ -90,9 +93,11 @@ export function Dialog({
             <X />
           </Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">{children}</div>
+        <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
+          {children}
+        </div>
         {footer ? (
-          <div className="flex flex-col-reverse gap-2 border-t border-border/70 bg-muted/25 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+          <div className="flex flex-col-reverse gap-2 border-t border-border/70 bg-muted/25 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end sm:px-6 sm:pb-4">
             {footer}
           </div>
         ) : null}
