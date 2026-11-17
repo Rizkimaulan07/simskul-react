@@ -83,6 +83,7 @@ export function DocumentationPage() {
   const coveredEskul = new Set(scopedDocs.map((doc) => doc.eskulId)).size
   const ownSessions = store.sessions
     .filter((session) => session.eskulId === user.eskulId)
+    .filter((session) => session.date <= todayISO())
     .sort((a, b) => b.date.localeCompare(a.date))
 
   const openAdd = () => {
@@ -131,6 +132,14 @@ export function DocumentationPage() {
     }
     if (!imageFile) {
       toast.error('Pilih gambar dokumentasi dari perangkat terlebih dahulu.')
+      return
+    }
+    if (!form.date) {
+      toast.error('Tanggal kegiatan wajib diisi.')
+      return
+    }
+    if (form.date > todayISO()) {
+      toast.error('Tanggal dokumentasi tidak boleh melebihi hari ini.')
       return
     }
     setSubmitting(true)
@@ -400,11 +409,17 @@ export function DocumentationPage() {
             />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Tanggal kegiatan" htmlFor="doc-date" required>
+            <Field
+              label="Tanggal kegiatan"
+              htmlFor="doc-date"
+              hint="Tidak boleh melebihi hari ini"
+              required
+            >
               <Input
                 id="doc-date"
                 type="date"
                 value={form.date}
+                max={todayISO()}
                 onChange={(event) => setForm({ ...form, date: event.target.value })}
               />
             </Field>

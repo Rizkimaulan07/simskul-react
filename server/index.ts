@@ -185,6 +185,15 @@ function requireDate(value: unknown, label: string) {
   return value
 }
 
+/** Tanggal hari ini menurut waktu lokal server dalam format YYYY-MM-DD. */
+function currentDateISO() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function requireTime(value: unknown, label: string) {
   if (typeof value !== 'string' || !/^\d{2}:\d{2}$/.test(value)) {
     throw new HttpError(400, `${label} harus berupa jam yang valid.`)
@@ -1295,6 +1304,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const caption = optionalText(body.caption, 3000) ?? ''
     const imageUrl = requireText(body.imageUrl, 'Gambar dokumentasi', 2000)
     const date = requireDate(body.date, 'Tanggal')
+    if (date > currentDateISO()) {
+      throw new HttpError(400, 'Tanggal dokumentasi tidak boleh melebihi hari ini.')
+    }
     const sessionId = optionalText(body.sessionId, 100)
     if (sessionId) {
       const session = await sessionMeta(sessionId)
