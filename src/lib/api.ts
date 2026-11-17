@@ -13,6 +13,23 @@ interface RequestOptions {
   body?: unknown
 }
 
+async function parseResponse<T>(response: Response): Promise<T> {
+  if (response.status === 204) return undefined as T
+
+  const payload = (await response.json().catch(() => null)) as
+    | { error?: string; message?: string }
+    | null
+
+  if (!response.ok) {
+    throw new ApiError(
+      payload?.error ?? payload?.message ?? `Permintaan gagal (${response.status}).`,
+      response.status,
+    )
+  }
+
+  return payload as T
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -36,20 +53,26 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     )
   }
 
-  if (response.status === 204) return undefined as T
+  return parseResponse<T>(response)
+}
 
-  const payload = (await response.json().catch(() => null)) as
-    | { error?: string; message?: string }
-    | null
-
-  if (!response.ok) {
+async function requestUpload<T>(path: string, form: FormData): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(`/api${path}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: form,
+    })
+  } catch {
     throw new ApiError(
-      payload?.error ?? payload?.message ?? `Permintaan gagal (${response.status}).`,
-      response.status,
+      'Tidak dapat menghubungi server. Pastikan API SIMSKUL sedang berjalan.',
+      0,
     )
   }
 
-  return payload as T
+  return parseResponse<T>(response)
 }
 
 export const api = {
@@ -58,6 +81,7 @@ export const api = {
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  upload: <T>(path: string, form: FormData) => requestUpload<T>(path, form),
 }
 
 export function apiErrorMessage(error: unknown) {

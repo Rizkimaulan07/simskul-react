@@ -240,6 +240,15 @@ const SCHEMA = `
     UNIQUE (student_id, semester)
   );
 
+  CREATE TABLE IF NOT EXISTS documentation_images (
+    id TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL,
+    byte_size INTEGER NOT NULL,
+    data BYTEA NOT NULL,
+    uploaded_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS documentation (
     id TEXT PRIMARY KEY,
     eskul_id TEXT NOT NULL REFERENCES eskul(id) ON DELETE CASCADE,
@@ -1329,6 +1338,7 @@ export async function resetDemoData(actorId: string) {
       DELETE FROM attendance;
       DELETE FROM grades;
       DELETE FROM documentation;
+      DELETE FROM documentation_images;
       DELETE FROM permit_letters;
       DELETE FROM permits;
       DELETE FROM achievements;

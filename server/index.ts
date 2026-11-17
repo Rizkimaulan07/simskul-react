@@ -46,6 +46,12 @@ const sessionCookie = 'simskul_session'
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000
 const cookieSecure = process.env.SIMSKUL_COOKIE_SECURE === '1'
 const maxBodyBytes = 2 * 1024 * 1024
+const maxDocumentationImageBytes = 6 * 1024 * 1024
+const documentationImageTypes: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}
 
 const ESKUL_COLORS: EskulColor[] = ['emerald', 'sky', 'rose', 'amber', 'violet']
 
@@ -1213,6 +1219,72 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     return
   }
 
+  /* ------------------ Dokumentasi: unggah gambar -------------------- */
+
+  if (method === 'POST' && pathname === '/api/documentation/images') {
+    const user = await requireAuth(req)
+    requireRole(user, ['pelatih', 'ketua'])
+    let body: Awaited<ReturnType<typeof readMultipart>>
+    try {
+      body = await readMultipart(req)
+    } catch (error) {
+      throw new HttpError(
+        413,
+        error instanceof Error ? error.message : 'Berkas yang diunggah terlalu besar.',
+      )
+    }
+    const file = body.files.find((entry) => entry.fieldname === 'image')
+    if (!file) throw new HttpError(400, 'Berkas gambar tidak ditemukan.')
+    const contentType = file.contentType.split(';')[0]?.trim().toLowerCase() ?? ''
+    if (!documentationImageTypes[contentType]) {
+      throw new HttpError(400, 'Format gambar harus JPG, PNG, atau WEBP.')
+    }
+    if (file.data.length === 0) throw new HttpError(400, 'Berkas gambar kosong.')
+    if (file.data.length > maxDocumentationImageBytes) {
+      throw new HttpError(413, 'Ukuran gambar maksimal 6 MB.')
+    }
+    const id = `docimg_${randomUUID()}`
+    const now = new Date().toISOString()
+    await db
+      .prepare(
+        `INSERT INTO documentation_images
+          (id, content_type, byte_size, data, uploaded_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, contentType, file.data.length, file.data, user.id, now)
+    sendJson(res, 201, {
+      image: {
+        id,
+        url: `/api/documentation/images/${id}`,
+        contentType,
+        size: file.data.length,
+      },
+    })
+    return
+  }
+
+  const documentationImageMatch = pathname.match(/^\/api\/documentation\/images\/([^/]+)$/)
+  if ((method === 'GET' || method === 'HEAD') && documentationImageMatch) {
+    await requireAuth(req)
+    const imageId = decodeURIComponent(documentationImageMatch[1])
+    const row = await db
+      .prepare('SELECT content_type, data FROM documentation_images WHERE id = ? LIMIT 1')
+      .get(imageId) as unknown as { content_type: string; data: Buffer } | undefined
+    if (!row) throw new HttpError(404, 'Gambar dokumentasi tidak ditemukan.')
+    const data = Buffer.isBuffer(row.data) ? row.data : Buffer.from(row.data)
+    res.statusCode = 200
+    res.setHeader('Content-Type', row.content_type)
+    res.setHeader('Content-Length', data.byteLength)
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable')
+    res.setHeader('ETag', `"${imageId}"`)
+    if (method === 'HEAD') {
+      res.end()
+      return
+    }
+    res.end(data)
+    return
+  }
+
   if (method === 'POST' && pathname === '/api/documentation') {
     const user = await requireAuth(req)
     const body = await readJson(req)
@@ -1261,13 +1333,18 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const user = await requireAuth(req)
     const documentationId = decodeURIComponent(documentationMatch[1])
     const doc = await db
-      .prepare('SELECT id, eskul_id, title FROM documentation WHERE id = ? LIMIT 1')
+      .prepare('SELECT id, eskul_id, title, image_url FROM documentation WHERE id = ? LIMIT 1')
       .get(documentationId) as unknown as
-      | { id: string; eskul_id: string; title: string }
+      | { id: string; eskul_id: string; title: string; image_url: string }
       | undefined
     if (!doc) throw new HttpError(404, 'Dokumentasi tidak ditemukan.')
     assertEskulAccess(user, doc.eskul_id, ['pelatih', 'ketua'])
     await db.prepare('DELETE FROM documentation WHERE id = ?').run(documentationId)
+    const imagePrefix = '/api/documentation/images/'
+    if (doc.image_url.startsWith(imagePrefix)) {
+      const imageId = doc.image_url.slice(imagePrefix.length)
+      await db.prepare('DELETE FROM documentation_images WHERE id = ?').run(imageId)
+    }
     recordActivity(
       user.id,
       'Menghapus dokumentasi',
