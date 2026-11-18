@@ -383,7 +383,6 @@ export function AppShell() {
             <span className="font-bold text-foreground">SIMSKUL</span> · Sistem Informasi Manajemen
             Eskul
           </p>
-          <span>Data tersimpan di database PostgreSQL (`simskul`)</span>
         </footer>
       </div>
     </div>

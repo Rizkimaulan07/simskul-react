@@ -2,7 +2,6 @@ import {
   ArrowRight,
   Award,
   CalendarCheck2,
-  Database,
   Dumbbell,
   Eye,
   EyeOff,
@@ -381,12 +380,8 @@ export function LoginPage() {
             </p>
           </div>
 
-          <div className="mt-7 flex items-center justify-between border-t border-border/70 pt-5 text-[11px] text-muted-foreground">
-            <p className="flex items-center gap-1.5">
-              <Database className="size-3.5 text-primary" />
-              Data tersimpan di database PostgreSQL
-            </p>
-            <span className="text-muted-foreground/60">SIMSKUL v1.1</span>
+          <div className="mt-7 border-t border-border/70 pt-5 text-right text-[11px] text-muted-foreground/60">
+            SIMSKUL v1.1
           </div>
         </div>
 
