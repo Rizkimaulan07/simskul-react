@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { buildDefaultPermitLetter } from '../src/lib/permit-letter.ts'
-import { createSeedData } from '../src/lib/seed.ts'
+import { createSeedData, EXTRA_ESKUL_IDS } from '../src/lib/seed.ts'
 import type {
   Achievement,
   AchievementLevel,
@@ -170,6 +170,7 @@ const SCHEMA = `
     name TEXT NOT NULL,
     short_name TEXT NOT NULL,
     description TEXT NOT NULL,
+    logo_url TEXT,
     color TEXT NOT NULL,
     day TEXT NOT NULL,
     time TEXT NOT NULL,
@@ -177,6 +178,16 @@ const SCHEMA = `
     coach_id TEXT,
     leader_id TEXT,
     quota INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS eskul_logos (
+    eskul_id TEXT PRIMARY KEY REFERENCES eskul(id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL,
+    byte_size INTEGER NOT NULL,
+    data BYTEA NOT NULL,
+    uploaded_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS students (
@@ -367,6 +378,7 @@ interface EskulRow {
   coach_id: string | null
   leader_id: string | null
   quota: number
+  logo_url: string | null
 }
 
 interface StudentRow {
@@ -523,6 +535,7 @@ function toEskul(row: EskulRow): Eskul {
     coachId: row.coach_id ?? '',
     leaderId: row.leader_id ?? '',
     quota: row.quota,
+    logoUrl: row.logo_url ?? undefined,
   }
 }
 
@@ -659,6 +672,8 @@ const WAKASEK_ROLE_MIGRATION = '2026-10-29-wakasek-role'
 const WAKASEK_ACCOUNT_MIGRATION = '2026-10-29-wakasek-account'
 const PERMIT_LETTERS_MIGRATION = '2026-10-29-permit-letters'
 const ACHIEVEMENTS_MIGRATION = '2026-11-15-achievements'
+const EXTRA_ESKUL_MIGRATION = '2026-11-18-extra-eskul'
+const ESKUL_LOGO_MIGRATION = '2026-11-18-eskul-logo'
 
 const WAKASEK_EMAIL = 'wakasek@simskul.sch.id'
 
@@ -847,6 +862,140 @@ async function migrateAchievements() {
 }
 
 /**
+ * Adds the extra eskul demo data (accounts, members, and initial grades) to
+ * databases that were seeded before those eskul existed. Fresh databases get
+ * the same records through the regular seed, so this migration becomes a no-op.
+ */
+async function migrateExtraEskul() {
+  if (await migrationApplied(EXTRA_ESKUL_MIGRATION)) return
+  await transaction(async (tx) => {
+    const existingEskulRows = (await tx
+      .prepare('SELECT id FROM eskul')
+      .all()) as unknown as { id: string }[]
+    const existingEskulIds = new Set(existingEskulRows.map((row) => row.id))
+    if (EXTRA_ESKUL_IDS.every((id) => existingEskulIds.has(id))) {
+      await recordMigration(tx, EXTRA_ESKUL_MIGRATION)
+      return
+    }
+
+    const seed = createSeedData()
+    const extraIds = new Set(EXTRA_ESKUL_IDS)
+    const extraUsers = seed.users.filter(
+      (user) => user.eskulId && extraIds.has(user.eskulId),
+    )
+    const extraEskul = seed.eskul.filter((item) => extraIds.has(item.id))
+    const extraStudents = seed.students.filter((student) => extraIds.has(student.eskulId))
+    const extraStudentIds = new Set(extraStudents.map((student) => student.id))
+    const extraGrades = seed.grades.filter((grade) => extraStudentIds.has(grade.studentId))
+    const now = new Date().toISOString()
+    const demoPasswordHash = hashPassword(process.env.SIMSKUL_DEMO_PASSWORD ?? 'simskul123')
+
+    const insertUser = tx.prepare(
+      `INSERT INTO users
+        (id, name, email, password_hash, role, eskul_id, phone, active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+       ON CONFLICT DO NOTHING`,
+    )
+    for (const user of extraUsers) {
+      await insertUser.run(
+        user.id,
+        user.name,
+        user.email,
+        demoPasswordHash,
+        user.role,
+        user.eskulId ?? null,
+        user.phone ?? null,
+        now,
+        now,
+      )
+    }
+
+    const insertEskul = tx.prepare(
+      `INSERT INTO eskul
+        (id, name, short_name, description, color, day, time, location, coach_id, leader_id, quota)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT DO NOTHING`,
+    )
+    for (const item of extraEskul) {
+      await insertEskul.run(
+        item.id,
+        item.name,
+        item.shortName,
+        item.description,
+        item.color,
+        item.day,
+        item.time,
+        item.location,
+        item.coachId || null,
+        item.leaderId || null,
+        item.quota,
+      )
+    }
+
+    const insertStudent = tx.prepare(
+      `INSERT INTO students (id, name, nis, class_name, gender, eskul_id, active, joined_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT DO NOTHING`,
+    )
+    for (const student of extraStudents) {
+      await insertStudent.run(
+        student.id,
+        student.name,
+        student.nis,
+        student.className,
+        student.gender,
+        student.eskulId,
+        student.active ? 1 : 0,
+        student.joinedAt,
+      )
+    }
+
+    const insertGrade = tx.prepare(
+      `INSERT INTO grades
+        (id, student_id, semester, keaktifan, sikap, keterampilan, note, updated_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT DO NOTHING`,
+    )
+    for (const grade of extraGrades) {
+      await insertGrade.run(
+        grade.id,
+        grade.studentId,
+        grade.semester,
+        grade.keaktifan,
+        grade.sikap,
+        grade.keterampilan,
+        grade.note ?? null,
+        grade.updatedBy,
+        grade.updatedAt,
+      )
+    }
+
+    await recordMigration(tx, EXTRA_ESKUL_MIGRATION)
+  })
+}
+
+/**
+ * Adds persistent eskul logo storage to databases that were created before the
+ * logo feature existed. Fresh databases already receive the same structures
+ * from SCHEMA.
+ */
+async function migrateEskulLogo() {
+  await runMigration(
+    ESKUL_LOGO_MIGRATION,
+    `ALTER TABLE eskul ADD COLUMN IF NOT EXISTS logo_url TEXT;
+     CREATE TABLE IF NOT EXISTS eskul_logos (
+       eskul_id TEXT PRIMARY KEY REFERENCES eskul(id) ON DELETE CASCADE,
+       content_type TEXT NOT NULL,
+       byte_size INTEGER NOT NULL,
+       data BYTEA NOT NULL,
+       uploaded_by TEXT NOT NULL,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     );`,
+  )
+}
+
+/**
  * Backfills staff attendance once for databases created before staff
  * attendance existed. Migration markers prevent new coach/ketua assignments
  * from rewriting historical sessions on every server start.
@@ -897,6 +1046,8 @@ export function ready(): Promise<boolean> {
       await migrateWakasekAccount()
       await migratePermitLetters()
       await migrateAchievements()
+      await migrateExtraEskul()
+      await migrateEskulLogo()
       return seeded
     })().catch((error) => {
       readyPromise = null
@@ -1339,6 +1490,7 @@ export async function resetDemoData(actorId: string) {
       DELETE FROM grades;
       DELETE FROM documentation;
       DELETE FROM documentation_images;
+      DELETE FROM eskul_logos;
       DELETE FROM permit_letters;
       DELETE FROM permits;
       DELETE FROM achievements;

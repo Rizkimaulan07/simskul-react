@@ -89,6 +89,12 @@ interface AppStore extends SeedData {
   createEskul: (input: NewEskulInput, options?: MutationOptions) => Promise<void>
   updateEskul: (eskulId: string, patch: EskulPatch, options?: MutationOptions) => Promise<void>
   deleteEskul: (eskulId: string) => Promise<void>
+  uploadEskulLogo: (
+    eskulId: string,
+    file: File,
+    options?: MutationOptions,
+  ) => Promise<string>
+  removeEskulLogo: (eskulId: string, options?: MutationOptions) => Promise<void>
   createUser: (input: NewUserInput) => Promise<User>
   updateUser: (userId: string, patch: UserPatch) => Promise<User>
   setUserActive: (userId: string, active: boolean) => Promise<User>
@@ -642,6 +648,30 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     await api.delete(`/eskul/${encodeURIComponent(eskulId)}`)
     await get().refresh()
     toast.success('Eskul berhasil dihapus')
+  },
+
+  uploadEskulLogo: async (eskulId, file, options) => {
+    const form = new FormData()
+    form.append('image', file)
+    const result = await api.upload<{ logoUrl: string }>(
+      `/eskul/${encodeURIComponent(eskulId)}/logo`,
+      form,
+    )
+    await get().refresh()
+    if (options?.notify !== false) {
+      const eskul = get().eskul.find((item) => item.id === eskulId)
+      toast.success('Logo eskul diperbarui', { description: eskul?.name })
+    }
+    return result.logoUrl
+  },
+
+  removeEskulLogo: async (eskulId, options) => {
+    await api.delete(`/eskul/${encodeURIComponent(eskulId)}/logo`)
+    await get().refresh()
+    if (options?.notify !== false) {
+      const eskul = get().eskul.find((item) => item.id === eskulId)
+      toast.success('Logo eskul dihapus', { description: eskul?.name })
+    }
   },
 
   createUser: async (input) => {

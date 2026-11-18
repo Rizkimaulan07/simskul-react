@@ -119,38 +119,49 @@ export function EskulDetailPage() {
         <div className="grid-pattern absolute inset-0 opacity-30" />
         <div className="absolute -right-16 -top-20 size-64 rounded-full border border-white/10" />
         <div className="absolute -bottom-24 right-24 size-48 rounded-full bg-white/10 blur-2xl" />
-        <div className="relative">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="dark" className="gap-1">
-              <CalendarDays className="size-3" />
-              Setiap {eskul.day}
-            </Badge>
-            <Badge variant="dark" className="gap-1">
-              <Users className="size-3" />
-              {activeMembers.length} / {eskul.quota} anggota
-            </Badge>
-          </div>
-          <h1 className="mt-4 text-3xl font-extrabold tracking-tight sm:text-4xl">{eskul.name}</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/70">
-            {eskul.description}
-          </p>
-          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-white/70">
-            <span className="flex items-center gap-1.5">
-              <Clock3 className="size-3.5 text-white/50" />
-              {eskul.time}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <MapPin className="size-3.5 text-white/50" />
-              {eskul.location}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Avatar name={coach?.name ?? 'Pelatih'} id={coach?.id} size="xs" className="ring-white/20" />
-              {coach?.name}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Avatar name={leader?.name ?? 'Ketua'} id={leader?.id} size="xs" className="ring-white/20" />
-              {leader?.name}
-            </span>
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start">
+          {eskul.logoUrl ? (
+            <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-white shadow-lg">
+              <img
+                src={eskul.logoUrl}
+                alt={`Logo ${eskul.name}`}
+                className="size-full scale-150 object-contain"
+              />
+            </div>
+          ) : null}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="dark" className="gap-1">
+                <CalendarDays className="size-3" />
+                Setiap {eskul.day}
+              </Badge>
+              <Badge variant="dark" className="gap-1">
+                <Users className="size-3" />
+                {activeMembers.length} / {eskul.quota} anggota
+              </Badge>
+            </div>
+            <h1 className="mt-4 text-3xl font-extrabold tracking-tight sm:text-4xl">{eskul.name}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/70">
+              {eskul.description}
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-white/70">
+              <span className="flex items-center gap-1.5">
+                <Clock3 className="size-3.5 text-white/50" />
+                {eskul.time}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <MapPin className="size-3.5 text-white/50" />
+                {eskul.location}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Avatar name={coach?.name ?? 'Pelatih'} id={coach?.id} size="xs" className="ring-white/20" />
+                {coach?.name}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Avatar name={leader?.name ?? 'Ketua'} id={leader?.id} size="xs" className="ring-white/20" />
+                {leader?.name}
+              </span>
+            </div>
           </div>
         </div>
       </div>

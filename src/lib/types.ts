@@ -51,6 +51,7 @@ export interface Eskul {
   coachId: string
   leaderId: string
   quota: number
+  logoUrl?: string
 }
 
 export interface Student {

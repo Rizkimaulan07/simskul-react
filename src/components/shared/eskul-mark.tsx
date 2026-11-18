@@ -9,7 +9,7 @@ interface EskulMarkProps {
 }
 
 const sizes = {
-  sm: 'size-9 rounded-xl text-[10px]',
+  sm: 'size-11 rounded-xl text-[10px]',
   md: 'size-12 rounded-2xl text-xs',
   lg: 'size-16 rounded-2xl text-sm',
 }
@@ -19,14 +19,18 @@ export function EskulMark({ eskul, size = 'md', className }: EskulMarkProps) {
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-center bg-gradient-to-br font-extrabold tracking-[0.08em] text-white shadow-md shadow-slate-950/10',
+        'flex shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br font-extrabold tracking-[0.08em] text-white shadow-md shadow-slate-950/10',
         theme.gradient,
         sizes[size],
         className,
       )}
       aria-hidden="true"
     >
-      {eskul.shortName}
+      {eskul.logoUrl ? (
+        <img src={eskul.logoUrl} alt="" className="size-full scale-150 bg-white object-contain" />
+      ) : (
+        eskul.shortName
+      )}
     </div>
   )
 }

@@ -16,7 +16,7 @@ CREATE ROLE simskul_app LOGIN PASSWORD '<password>';
 GRANT ALL PRIVILEGES ON DATABASE simskul TO simskul_app;
 ```
 
-Saat pertama dijalankan pada database yang masih kosong, backend otomatis membuat seluruh tabel dan mengisi data demo (3 eskul, 8 akun, 22 anggota, sesi, nilai, dokumentasi, surat izin, dan prestasi eskul).
+Saat pertama dijalankan pada database yang masih kosong, backend otomatis membuat seluruh tabel dan mengisi data demo (17 eskul, 36 akun, 134 anggota, sesi, nilai, dokumentasi, surat izin, dan prestasi eskul).
 
 ### 2. Konfigurasi `.env`
 
@@ -68,6 +68,8 @@ npm run typecheck  # tsc untuk client & server
 | Ketua Eskul | rani@simskul.sch.id | Rani Puspita | Pramuka |
 
 Kata sandi admin dapat diatur lewat `SIMSKUL_ADMIN_PASSWORD` saat database masih kosong.
+
+Setiap eskul memiliki satu akun pelatih dan satu akun ketua. Pola emailnya adalah `pelatih.<slug>@simskul.sch.id` dan `ketua.<slug>@simskul.sch.id` (contoh: `pelatih.andro-it@simskul.sch.id`), dengan kata sandi demo `simskul123`.
 
 ## Peran & hak akses
 

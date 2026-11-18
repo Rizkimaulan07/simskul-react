@@ -7,6 +7,8 @@ import type {
   AttendanceStatus,
   Documentation,
   Eskul,
+  EskulColor,
+  Gender,
   Grade,
   Permit,
   SeedData,
@@ -88,7 +90,7 @@ function makeStaffAttendance(
   return entries
 }
 
-const users: User[] = [
+const baseUsers: User[] = [
   {
     id: 'u-admin',
     name: 'Administrator SIMSKUL',
@@ -151,7 +153,7 @@ const users: User[] = [
   },
 ]
 
-const eskul: Eskul[] = [
+const baseEskul: Eskul[] = [
   {
     id: 'e-pramuka',
     name: 'Pramuka',
@@ -196,7 +198,519 @@ const eskul: Eskul[] = [
   },
 ]
 
-const studentSeeds: Omit<Student, 'id' | 'active' | 'joinedAt'>[] = [
+interface ExtraEskulSeed {
+  id: string
+  name: string
+  shortName: string
+  description: string
+  color: EskulColor
+  day: string
+  time: string
+  location: string
+  quota: number
+  coach: { name: string; email: string; phone: string }
+  leader: { name: string; email: string; phone: string }
+  members: Array<[name: string, className: string, gender: Gender]>
+}
+
+/**
+ * Eskul tambahan yang dipakai untuk melengkapi data demo.
+ * ID-nya sengaja stabil agar migrasi database lama dapat menambahkan data
+ * tanpa menduplikasi eskul yang sudah ada.
+ */
+const extraEskulSeeds: ExtraEskulSeed[] = [
+  {
+    id: 'e-andro-it',
+    name: 'Andro-IT',
+    shortName: 'AIT',
+    description:
+      'Mengembangkan keterampilan pemrograman Android, robotika dasar, dan literasi digital untuk mendukung kompetisi teknologi siswa.',
+    color: 'sky',
+    day: 'Senin',
+    time: '15.00 – 17.00',
+    location: 'Lab Komputer 1',
+    quota: 30,
+    coach: {
+      name: 'Rizky Firmansyah, S.Kom.',
+      email: 'pelatih.andro-it@simskul.sch.id',
+      phone: '0812-1100-0001',
+    },
+    leader: {
+      name: 'Aditya Putra Pratama',
+      email: 'ketua.andro-it@simskul.sch.id',
+      phone: '0813-2100-0001',
+    },
+    members: [
+      ['Bagus Setiawan', '10 PPLG 1', 'L'],
+      ['Nadia Safira', '10 PPLG 2', 'P'],
+      ['Fikri Ramadhan', '11 PPLG 1', 'L'],
+      ['Alya Putri', '11 TJKT 1', 'P'],
+      ['Raka Saputra', '10 TJKT 2', 'L'],
+      ['Intan Maharani', '12 PPLG 1', 'P'],
+      ['Yusuf Hidayat', '11 PPLG 2', 'L'],
+      ['Sinta Wulandari', '12 TJKT 1', 'P'],
+    ],
+  },
+  {
+    id: 'e-band',
+    name: 'Band',
+    shortName: 'BND',
+    description:
+      'Wadah bagi siswa yang hobi bermusik untuk berlatih bersama, mengaransemen lagu, dan tampil pada acara sekolah.',
+    color: 'violet',
+    day: 'Kamis',
+    time: '15.00 – 17.00',
+    location: 'Ruang Musik',
+    quota: 25,
+    coach: {
+      name: 'Arief Maulana, S.Sn.',
+      email: 'pelatih.band@simskul.sch.id',
+      phone: '0812-1100-0002',
+    },
+    leader: {
+      name: 'Nabila Ayu Safitri',
+      email: 'ketua.band@simskul.sch.id',
+      phone: '0813-2100-0002',
+    },
+    members: [
+      ['Reza Pratama', '11 PPLG 1', 'L'],
+      ['Melati Kusumawardani', '10 AKL 1', 'P'],
+      ['Dika Saputra', '12 TJKT 1', 'L'],
+      ['Rani Maharani', '11 PPLG 2', 'P'],
+      ['Fajar Nugraha', '10 AXIO 1', 'L'],
+      ['Cinta Ramadhani', '12 AKL 1', 'P'],
+      ['Bima Aditya', '11 TJKT 2', 'L'],
+      ['Zahra Amalia', '10 PPLG 1', 'P'],
+    ],
+  },
+  {
+    id: 'e-basket',
+    name: 'Basket',
+    shortName: 'BSK',
+    description:
+      'Melatih teknik dasar bola basket, strategi permainan, kebugaran, dan sportivitas melalui latihan rutin serta pertandingan.',
+    color: 'amber',
+    day: 'Selasa',
+    time: '15.30 – 17.00',
+    location: 'Lapangan Basket',
+    quota: 20,
+    coach: {
+      name: 'Doni Setiawan, S.Or.',
+      email: 'pelatih.basket@simskul.sch.id',
+      phone: '0812-1100-0003',
+    },
+    leader: {
+      name: 'Fahri Akbar',
+      email: 'ketua.basket@simskul.sch.id',
+      phone: '0813-2100-0003',
+    },
+    members: [
+      ['Fahri Akbar', '11 PPLG 1', 'L'],
+      ['Rizky Maulana', '12 TJKT 2', 'L'],
+      ['Andika Pratama', '10 AXIO 1', 'L'],
+      ['Gilang Saputra', '11 PPLG 3', 'L'],
+      ['Dimas Kurniawan', '10 TJKT 1', 'L'],
+      ['Arif Rahman', '12 PPLG 2', 'L'],
+      ['Bayu Nugroho', '11 AKL 1', 'L'],
+      ['Faris Abdillah', '10 PPLG 2', 'L'],
+    ],
+  },
+  {
+    id: 'e-badminton',
+    name: 'Badminton',
+    shortName: 'BDM',
+    description:
+      'Meningkatkan teknik pukulan, footwork, dan strategi bulu tangkis serta mempersiapkan anggota untuk kejuaraan sekolah dan kota.',
+    color: 'sky',
+    day: 'Senin',
+    time: '14.00 – 16.00',
+    location: 'GOR Sekolah',
+    quota: 24,
+    coach: {
+      name: 'Hendra Wijaya, S.Pd.',
+      email: 'pelatih.badminton@simskul.sch.id',
+      phone: '0812-1100-0004',
+    },
+    leader: {
+      name: 'Siti Aulia Rahma',
+      email: 'ketua.badminton@simskul.sch.id',
+      phone: '0813-2100-0004',
+    },
+    members: [
+      ['Siti Aulia Rahma', '11 PPLG 2', 'P'],
+      ['Kevin Saputra', '10 TJKT 1', 'L'],
+      ['Dinda Ayu Safitri', '12 AKL 1', 'P'],
+      ['Rio Firmansyah', '11 PPLG 1', 'L'],
+      ['Kirana Amelia', '10 PPLG 3', 'P'],
+      ['Hafizh Pratama', '12 TJKT 2', 'L'],
+      ['Anisa Rahmawati', '11 AXIO 1', 'P'],
+      ['Galih Saputra', '10 PPLG 1', 'L'],
+    ],
+  },
+  {
+    id: 'e-irma',
+    name: 'IRMA',
+    shortName: 'IRM',
+    description:
+      'Ikatan Remaja Masjid: membina akhlak, memperdalam ilmu keislaman, serta menggerakkan kegiatan sosial dan keagamaan di sekolah.',
+    color: 'emerald',
+    day: 'Jumat',
+    time: '12.30 – 14.00',
+    location: 'Masjid Sekolah',
+    quota: 40,
+    coach: {
+      name: 'Ahmad Fauzi, S.Ag.',
+      email: 'pelatih.irma@simskul.sch.id',
+      phone: '0812-1100-0005',
+    },
+    leader: {
+      name: 'Muhammad Rizal',
+      email: 'ketua.irma@simskul.sch.id',
+      phone: '0813-2100-0005',
+    },
+    members: [
+      ['Muhammad Rizal', '11 PPLG 1', 'L'],
+      ['Aisyah Nur Fadilah', '10 AKL 1', 'P'],
+      ['Fauzan Ramadhan', '12 TJKT 1', 'L'],
+      ['Zahra Nabila', '11 PPLG 2', 'P'],
+      ['Ilham Maulana', '10 AXIO 1', 'L'],
+      ['Salsabila Putri', '12 AKL 1', 'P'],
+      ['Arif Hidayat', '11 TJKT 2', 'L'],
+      ['Nabila Rahmawati', '10 PPLG 3', 'P'],
+    ],
+  },
+  {
+    id: 'e-jbm',
+    name: 'JBM',
+    shortName: 'JBM',
+    description:
+      'Jaringan Bisnis Muda: mengasah jiwa wirausaha, pemasaran digital, pengelolaan keuangan, dan praktik bisnis siswa.',
+    color: 'amber',
+    day: 'Rabu',
+    time: '14.00 – 16.00',
+    location: 'Ruang Kewirausahaan',
+    quota: 30,
+    coach: {
+      name: 'Ratna Sari, S.E.',
+      email: 'pelatih.jbm@simskul.sch.id',
+      phone: '0812-1100-0006',
+    },
+    leader: {
+      name: 'Dewi Anggraini',
+      email: 'ketua.jbm@simskul.sch.id',
+      phone: '0813-2100-0006',
+    },
+    members: [
+      ['Dewi Anggraini', '12 AKL 1', 'P'],
+      ['Raka Pratama', '11 PPLG 1', 'L'],
+      ['Sinta Amelia', '10 AKL 1', 'P'],
+      ['Fikri Maulana', '12 PPLG 2', 'L'],
+      ['Putri Salsabila', '11 PPLG 3', 'P'],
+      ['Andi Kurniawan', '10 TJKT 2', 'L'],
+      ['Rina Wulandari', '11 AXIO 1', 'P'],
+      ['Dafa Alfarizi', '10 PPLG 1', 'L'],
+    ],
+  },
+  {
+    id: 'e-karate',
+    name: 'Karate',
+    shortName: 'KRT',
+    description:
+      'Latihan bela diri karate untuk membangun disiplin, kebugaran, teknik dasar, dan kesiapan mengikuti kejuaraan.',
+    color: 'rose',
+    day: 'Sabtu',
+    time: '10.00 – 12.00',
+    location: 'Aula Serbaguna',
+    quota: 25,
+    coach: {
+      name: 'Agus Salim, S.Pd.',
+      email: 'pelatih.karate@simskul.sch.id',
+      phone: '0812-1100-0007',
+    },
+    leader: {
+      name: 'Bagas Dwi Nugroho',
+      email: 'ketua.karate@simskul.sch.id',
+      phone: '0813-2100-0007',
+    },
+    members: [
+      ['Bagas Dwi Nugroho', '11 PPLG 1', 'L'],
+      ['Rani Kusuma', '10 PPLG 2', 'P'],
+      ['Fajar Setiawan', '12 TJKT 1', 'L'],
+      ['Intan Sari', '11 AKL 1', 'P'],
+      ['Yoga Aditya', '10 AXIO 1', 'L'],
+      ['Laila Rahmawati', '11 PPLG 3', 'P'],
+      ['Rifqi Maulana', '12 AKL 1', 'L'],
+      ['Nadia Fitriani', '10 TJKT 2', 'P'],
+    ],
+  },
+  {
+    id: 'e-muay-thai',
+    name: 'MuayThai',
+    shortName: 'MTI',
+    description:
+      'Olahraga bela diri Muay Thai yang melatih kekuatan, kecepatan, teknik dasar, dan disiplin anggota.',
+    color: 'rose',
+    day: 'Sabtu',
+    time: '13.00 – 15.00',
+    location: 'Aula Serbaguna',
+    quota: 20,
+    coach: {
+      name: 'Rudi Hartono',
+      email: 'pelatih.muay-thai@simskul.sch.id',
+      phone: '0812-1100-0008',
+    },
+    leader: {
+      name: 'Arya Saputra',
+      email: 'ketua.muay-thai@simskul.sch.id',
+      phone: '0813-2100-0008',
+    },
+    members: [
+      ['Arya Saputra', '11 PPLG 1', 'L'],
+      ['Bima Pratama', '10 TJKT 1', 'L'],
+      ['Citra Kirana', '12 AKL 1', 'P'],
+      ['Galih Prakoso', '11 PPLG 2', 'L'],
+      ['Hafizh Ramadhan', '10 PPLG 2', 'L'],
+      ['Melati Anggraini', '11 TJKT 2', 'P'],
+      ['Reza Fahlevi', '12 PPLG 1', 'L'],
+      ['Zahra Anindya', '10 AXIO 1', 'P'],
+    ],
+  },
+  {
+    id: 'e-osis',
+    name: 'OSIS',
+    shortName: 'OSIS',
+    description:
+      'Organisasi Siswa Intra Sekolah: wadah kepemimpinan, organisasi, dan pelayanan siswa melalui program kerja sekolah.',
+    color: 'sky',
+    day: 'Jumat',
+    time: '14.00 – 15.30',
+    location: 'Ruang OSIS',
+    quota: 30,
+    coach: {
+      name: 'Dewi Anggraeni, S.Pd.',
+      email: 'pelatih.osis@simskul.sch.id',
+      phone: '0812-1100-0009',
+    },
+    leader: {
+      name: 'Raka Aditya',
+      email: 'ketua.osis@simskul.sch.id',
+      phone: '0813-2100-0009',
+    },
+    members: [
+      ['Raka Aditya', '11 PPLG 1', 'L'],
+      ['Nabila Putri', '12 AKL 1', 'P'],
+      ['Fikri Ananda', '10 TJKT 2', 'L'],
+      ['Alya Safira', '11 PPLG 2', 'P'],
+      ['Dimas Prasetyo', '12 TJKT 1', 'L'],
+      ['Salsabila Aulia', '10 PPLG 3', 'P'],
+      ['Ilham Ramadhan', '11 AXIO 1', 'L'],
+      ['Cinta Lestari', '12 PPLG 1', 'P'],
+    ],
+  },
+  {
+    id: 'e-padus',
+    name: 'Padus',
+    shortName: 'PDS',
+    description:
+      'Paduan Suara: melatih teknik vokal, harmoni, dan kekompakan untuk tampil pada upacara serta kompetisi sekolah.',
+    color: 'violet',
+    day: 'Selasa',
+    time: '14.00 – 16.00',
+    location: 'Ruang Musik',
+    quota: 30,
+    coach: {
+      name: 'Yohanes Surya, S.Mus.',
+      email: 'pelatih.padus@simskul.sch.id',
+      phone: '0812-1100-0010',
+    },
+    leader: {
+      name: 'Clara Anindya',
+      email: 'ketua.padus@simskul.sch.id',
+      phone: '0813-2100-0010',
+    },
+    members: [
+      ['Clara Anindya', '11 PPLG 1', 'P'],
+      ['Michael Jonathan', '12 TJKT 1', 'L'],
+      ['Angelina Putri', '10 AKL 1', 'P'],
+      ['Rafael Simbolon', '11 PPLG 2', 'L'],
+      ['Debora Natalia', '12 AKL 1', 'P'],
+      ['Gideon Pratama', '10 PPLG 1', 'L'],
+      ['Maria Fransiska', '11 AXIO 1', 'P'],
+      ['Samuel Hutapea', '10 TJKT 2', 'L'],
+    ],
+  },
+  {
+    id: 'e-paskibra',
+    name: 'Paskibra',
+    shortName: 'PASK',
+    description:
+      'Pasukan Pengibar Bendera: melatih kedisiplinan, baris-berbaris, dan ketahanan fisik untuk tugas upacara bendera.',
+    color: 'rose',
+    day: 'Jumat',
+    time: '15.00 – 17.00',
+    location: 'Lapangan Utama',
+    quota: 30,
+    coach: {
+      name: 'Hadi Susanto',
+      email: 'pelatih.paskibra@simskul.sch.id',
+      phone: '0812-1100-0011',
+    },
+    leader: {
+      name: 'Farhan Maulana',
+      email: 'ketua.paskibra@simskul.sch.id',
+      phone: '0813-2100-0011',
+    },
+    members: [
+      ['Farhan Maulana', '11 PPLG 1', 'L'],
+      ['Nadia Ramadhani', '12 TJKT 1', 'P'],
+      ['Rizky Pratama', '10 PPLG 2', 'L'],
+      ['Putri Aulia', '11 AKL 1', 'P'],
+      ['Fajar Hidayat', '12 PPLG 1', 'L'],
+      ['Intan Permatasari', '10 AXIO 1', 'P'],
+      ['Bagas Setiawan', '11 TJKT 2', 'L'],
+      ['Laila Safitri', '10 PPLG 3', 'P'],
+    ],
+  },
+  {
+    id: 'e-pencak-silat',
+    name: 'Pencak Silat',
+    shortName: 'PSL',
+    description:
+      'Melestarikan seni bela diri pencak silat, membina kedisiplinan, serta mempersiapkan anggota untuk festival dan kejuaraan.',
+    color: 'emerald',
+    day: 'Selasa',
+    time: '15.30 – 17.30',
+    location: 'Aula Serbaguna',
+    quota: 25,
+    coach: {
+      name: 'Bambang Sutrisno',
+      email: 'pelatih.pencak-silat@simskul.sch.id',
+      phone: '0812-1100-0012',
+    },
+    leader: {
+      name: 'Rani Oktaviani',
+      email: 'ketua.pencak-silat@simskul.sch.id',
+      phone: '0813-2100-0012',
+    },
+    members: [
+      ['Rani Oktaviani', '11 PPLG 2', 'P'],
+      ['Fikri Hidayat', '10 TJKT 1', 'L'],
+      ['Sinta Nuraini', '12 AKL 1', 'P'],
+      ['Andika Saputra', '11 PPLG 1', 'L'],
+      ['Melati Puspita', '10 PPLG 3', 'P'],
+      ['Raka Fadillah', '12 TJKT 2', 'L'],
+      ['Aisyah Ramadhani', '11 AXIO 1', 'P'],
+      ['Yoga Firmansyah', '10 PPLG 1', 'L'],
+    ],
+  },
+  {
+    id: 'e-pmr',
+    name: 'PMR',
+    shortName: 'PMR',
+    description:
+      'Palang Merah Remaja: membekali anggota dengan pertolongan pertama, kesehatan dasar, dan kegiatan kemanusiaan.',
+    color: 'emerald',
+    day: 'Kamis',
+    time: '14.00 – 16.00',
+    location: 'Ruang UKS',
+    quota: 30,
+    coach: {
+      name: 'Maya Kusuma, S.Ked.',
+      email: 'pelatih.pmr@simskul.sch.id',
+      phone: '0812-1100-0013',
+    },
+    leader: {
+      name: 'Anisa Fitriani',
+      email: 'ketua.pmr@simskul.sch.id',
+      phone: '0813-2100-0013',
+    },
+    members: [
+      ['Anisa Fitriani', '11 PPLG 1', 'P'],
+      ['Dimas Saputra', '10 TJKT 2', 'L'],
+      ['Nadia Puspita', '12 AKL 1', 'P'],
+      ['Fauzan Hidayat', '11 PPLG 2', 'L'],
+      ['Salsabila Nuraini', '10 PPLG 1', 'P'],
+      ['Rizky Ramadhan', '12 TJKT 1', 'L'],
+      ['Intan Salsabila', '11 AKL 1', 'P'],
+      ['Bagas Pratama', '10 AXIO 1', 'L'],
+    ],
+  },
+  {
+    id: 'e-volly',
+    name: 'Volly',
+    shortName: 'VOL',
+    description:
+      'Melatih teknik dasar bola voli, servis, smash, dan kerja sama tim untuk mengikuti turnamen antar sekolah.',
+    color: 'sky',
+    day: 'Kamis',
+    time: '15.30 – 17.00',
+    location: 'Lapangan Voli',
+    quota: 24,
+    coach: {
+      name: 'Rahmat Hidayat, S.Or.',
+      email: 'pelatih.volly@simskul.sch.id',
+      phone: '0812-1100-0014',
+    },
+    leader: {
+      name: 'Fajar Nugroho',
+      email: 'ketua.volly@simskul.sch.id',
+      phone: '0813-2100-0014',
+    },
+    members: [
+      ['Fajar Nugroho', '11 PPLG 1', 'L'],
+      ['Rani Puspitasari', '10 PPLG 2', 'P'],
+      ['Andi Saputra', '12 TJKT 1', 'L'],
+      ['Siti Nurhaliza', '11 AKL 1', 'P'],
+      ['Bima Kurniawan', '10 TJKT 2', 'L'],
+      ['Dewi Lestari', '12 PPLG 2', 'P'],
+      ['Rizky Hidayat', '11 AXIO 1', 'L'],
+      ['Nabila Zahra', '10 PPLG 3', 'P'],
+    ],
+  },
+]
+
+export const EXTRA_ESKUL_IDS = extraEskulSeeds.map((item) => item.id)
+
+const extraEskul: Eskul[] = extraEskulSeeds.map((item) => ({
+  id: item.id,
+  name: item.name,
+  shortName: item.shortName,
+  description: item.description,
+  color: item.color,
+  day: item.day,
+  time: item.time,
+  location: item.location,
+  coachId: `u-pelatih-${item.id.slice(2)}`,
+  leaderId: `u-ketua-${item.id.slice(2)}`,
+  quota: item.quota,
+}))
+
+const extraUsers: User[] = extraEskulSeeds.flatMap((item) => {
+  const slug = item.id.slice(2)
+  return [
+    {
+      id: `u-pelatih-${slug}`,
+      name: item.coach.name,
+      email: item.coach.email,
+      role: 'pelatih' as const,
+      eskulId: item.id,
+      phone: item.coach.phone,
+    },
+    {
+      id: `u-ketua-${slug}`,
+      name: item.leader.name,
+      email: item.leader.email,
+      role: 'ketua' as const,
+      eskulId: item.id,
+      phone: item.leader.phone,
+    },
+  ]
+})
+
+const users: User[] = [...baseUsers, ...extraUsers]
+const eskul: Eskul[] = [...baseEskul, ...extraEskul]
+
+const baseStudentSeeds: Omit<Student, 'id' | 'active' | 'joinedAt'>[] = [
   { name: 'Rani Puspita', nis: '2026001', className: '10 PPLG 1', gender: 'P', eskulId: 'e-pramuka' },
   { name: 'Bagas Saputra', nis: '2026002', className: '10 PPLG 1', gender: 'L', eskulId: 'e-pramuka' },
   { name: 'Nadia Putri', nis: '2026003', className: '10 TJKT 1', gender: 'P', eskulId: 'e-pramuka' },
@@ -222,6 +736,19 @@ const studentSeeds: Omit<Student, 'id' | 'active' | 'joinedAt'>[] = [
   { name: 'Melati Kusuma', nis: '2026025', className: '11 TJKT 2', gender: 'P', eskulId: 'e-tari' },
   { name: 'Zahra Aulia', nis: '2026026', className: '12 AXIO 1', gender: 'P', eskulId: 'e-tari' },
 ]
+
+const extraStudentSeeds: Omit<Student, 'id' | 'active' | 'joinedAt'>[] =
+  extraEskulSeeds.flatMap((item, eskulIndex) =>
+    item.members.map(([name, className, gender], memberIndex) => ({
+      name,
+      nis: String(2026101 + eskulIndex * 10 + memberIndex),
+      className,
+      gender,
+      eskulId: item.id,
+    })),
+  )
+
+const studentSeeds = [...baseStudentSeeds, ...extraStudentSeeds]
 
 const students: Student[] = studentSeeds.map((student, index) => ({
   ...student,
@@ -493,6 +1020,8 @@ const sessions: Session[] = sessionSeeds.map((seed) => {
   }
 })
 
+const coachByEskul = new Map(eskul.map((item) => [item.id, item.coachId]))
+
 const grades: Grade[] = students
   .filter((student) => student.id !== 'st-07' && student.id !== 'st-08')
   .map((student, index) => {
@@ -508,12 +1037,7 @@ const grades: Grade[] = students
         index % 5 === 0
           ? 'Konsisten aktif dan menunjukkan peningkatan yang baik.'
           : undefined,
-      updatedBy:
-        student.eskulId === 'e-pramuka'
-          ? 'u-pelatih-pramuka'
-          : student.eskulId === 'e-futsal'
-            ? 'u-pelatih-futsal'
-            : 'u-pelatih-tari',
+      updatedBy: coachByEskul.get(student.eskulId) ?? 'u-admin',
       updatedAt: timestamp(localISO(-3)),
     }
   })

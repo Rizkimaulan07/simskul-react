@@ -669,6 +669,97 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     return
   }
 
+  const eskulLogoMatch = pathname.match(/^\/api\/eskul\/([^/]+)\/logo$/)
+  if (eskulLogoMatch && method === 'POST') {
+    const actor = await requireAuth(req)
+    requireRole(actor, ['admin'])
+    const eskulId = decodeURIComponent(eskulLogoMatch[1])
+    const eskulRow = await db
+      .prepare('SELECT name FROM eskul WHERE id = ? LIMIT 1')
+      .get(eskulId) as unknown as { name: string } | undefined
+    if (!eskulRow) throw new HttpError(404, 'Eskul tidak ditemukan.')
+
+    let body: Awaited<ReturnType<typeof readMultipart>>
+    try {
+      body = await readMultipart(req)
+    } catch (error) {
+      throw new HttpError(
+        413,
+        error instanceof Error ? error.message : 'Berkas yang diunggah terlalu besar.',
+      )
+    }
+    const file = body.files.find((entry) => entry.fieldname === 'image')
+    if (!file) throw new HttpError(400, 'Berkas logo tidak ditemukan.')
+    const contentType = file.contentType.split(';')[0]?.trim().toLowerCase() ?? ''
+    if (!documentationImageTypes[contentType]) {
+      throw new HttpError(400, 'Format logo harus JPG, PNG, atau WEBP.')
+    }
+    if (file.data.length === 0) throw new HttpError(400, 'Berkas logo kosong.')
+    if (file.data.length > maxDocumentationImageBytes) {
+      throw new HttpError(413, 'Ukuran logo maksimal 6 MB.')
+    }
+
+    const now = new Date().toISOString()
+    await db
+      .prepare(
+        `INSERT INTO eskul_logos
+          (eskul_id, content_type, byte_size, data, uploaded_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (eskul_id) DO UPDATE SET
+           content_type = excluded.content_type,
+           byte_size = excluded.byte_size,
+           data = excluded.data,
+           uploaded_by = excluded.uploaded_by,
+           updated_at = excluded.updated_at`,
+      )
+      .run(eskulId, contentType, file.data.length, file.data, actor.id, now, now)
+    const logoUrl = `/api/eskul/${encodeURIComponent(eskulId)}/logo?v=${Date.now().toString(36)}`
+    await db.prepare('UPDATE eskul SET logo_url = ? WHERE id = ?').run(logoUrl, eskulId)
+    recordActivity(actor.id, 'Mengunggah logo eskul', eskulRow.name)
+    sendJson(res, 200, { logoUrl, contentType, size: file.data.length })
+    return
+  }
+
+  if (eskulLogoMatch && (method === 'GET' || method === 'HEAD')) {
+    await requireAuth(req)
+    const eskulId = decodeURIComponent(eskulLogoMatch[1])
+    const row = await db
+      .prepare(
+        'SELECT content_type, data, updated_at FROM eskul_logos WHERE eskul_id = ? LIMIT 1',
+      )
+      .get(eskulId) as unknown as
+      | { content_type: string; data: Buffer; updated_at: string }
+      | undefined
+    if (!row) throw new HttpError(404, 'Logo eskul tidak ditemukan.')
+    const data = Buffer.isBuffer(row.data) ? row.data : Buffer.from(row.data)
+    res.statusCode = 200
+    res.setHeader('Content-Type', row.content_type)
+    res.setHeader('Content-Length', data.byteLength)
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable')
+    res.setHeader('ETag', `"eskul-logo-${eskulId}-${row.updated_at}"`)
+    if (method === 'HEAD') {
+      res.end()
+      return
+    }
+    res.end(data)
+    return
+  }
+
+  if (eskulLogoMatch && method === 'DELETE') {
+    const actor = await requireAuth(req)
+    requireRole(actor, ['admin'])
+    const eskulId = decodeURIComponent(eskulLogoMatch[1])
+    const eskulRow = await db
+      .prepare('SELECT name FROM eskul WHERE id = ? LIMIT 1')
+      .get(eskulId) as unknown as { name: string } | undefined
+    if (!eskulRow) throw new HttpError(404, 'Eskul tidak ditemukan.')
+    await db.prepare('DELETE FROM eskul_logos WHERE eskul_id = ?').run(eskulId)
+    await db.prepare('UPDATE eskul SET logo_url = NULL WHERE id = ?').run(eskulId)
+    recordActivity(actor.id, 'Menghapus logo eskul', eskulRow.name)
+    sendJson(res, 200, { ok: true })
+    return
+  }
+
   /* ---------------------- Excel import ------------------------ */
 
   if (method === 'POST' && pathname === '/api/eskul/import') {

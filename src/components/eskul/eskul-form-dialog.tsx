@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { Loader2, Save, School, UserPlus, UserRound, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { ImagePlus, Loader2, Save, School, Trash2, UserPlus, UserRound, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -9,6 +9,11 @@ import { Textarea } from '@/components/ui/input'
 import { Field } from '@/components/shared/field'
 import { apiErrorMessage } from '@/lib/api'
 import { WEEKDAY_OPTIONS } from '@/lib/constants'
+import {
+  compressDocumentationImage,
+  MAX_DOCUMENTATION_IMAGE_BYTES,
+  validateDocumentationImage,
+} from '@/lib/image'
 import { useAppStore } from '@/lib/store'
 import type { Eskul, EskulColor, User } from '@/lib/types'
 import { cn, uid } from '@/lib/utils'
@@ -71,6 +76,8 @@ export function EskulFormDialog({ open, onOpenChange, eskul, users }: EskulFormD
   const createEskul = useAppStore((state) => state.createEskul)
   const updateEskul = useAppStore((state) => state.updateEskul)
   const createUser = useAppStore((state) => state.createUser)
+  const uploadEskulLogo = useAppStore((state) => state.uploadEskulLogo)
+  const removeEskulLogo = useAppStore((state) => state.removeEskulLogo)
   const [form, setForm] = useState<EskulFormState>(() => toFormState(eskul))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +87,20 @@ export function EskulFormDialog({ open, onOpenChange, eskul, users }: EskulFormD
   const [quickForm, setQuickForm] = useState<PendingUser>(emptyPendingUser)
   const [quickError, setQuickError] = useState<string | null>(null)
   const [savedEskulId, setSavedEskulId] = useState<string | null>(null)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [removeLogo, setRemoveLogo] = useState(false)
+  const [logoBusy, setLogoBusy] = useState(false)
+  const logoInputRef = useRef<HTMLInputElement>(null)
+  const logoPreviewUrlRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (logoPreviewUrlRef.current) {
+        URL.revokeObjectURL(logoPreviewUrlRef.current)
+      }
+    }
+  }, [])
 
   const coaches = users.filter((user) => user.role === 'pelatih' && user.active !== false)
   const leaders = users.filter((user) => user.role === 'ketua' && user.active !== false)
@@ -141,6 +162,42 @@ export function EskulFormDialog({ open, onOpenChange, eskul, users }: EskulFormD
     closeQuickForm()
   }
 
+  const handleLogoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    const validationError = validateDocumentationImage(file)
+    if (validationError) {
+      toast.error('Logo tidak dapat digunakan', { description: validationError })
+      return
+    }
+
+    setLogoBusy(true)
+    try {
+      const compressed = await compressDocumentationImage(file)
+      if (compressed.size > MAX_DOCUMENTATION_IMAGE_BYTES) {
+        toast.error('Logo terlalu besar', {
+          description: 'Ukuran gambar setelah dikompresi maksimal 6 MB.',
+        })
+        return
+      }
+      if (logoPreviewUrlRef.current) {
+        URL.revokeObjectURL(logoPreviewUrlRef.current)
+      }
+      const previewUrl = URL.createObjectURL(compressed)
+      logoPreviewUrlRef.current = previewUrl
+      setLogoPreview(previewUrl)
+      setLogoFile(compressed)
+      setRemoveLogo(false)
+      setError(null)
+    } catch (logoError) {
+      toast.error('Gagal memproses logo', { description: apiErrorMessage(logoError) })
+    } finally {
+      setLogoBusy(false)
+    }
+  }
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     const quota = Number(form.quota)
@@ -160,11 +217,15 @@ export function EskulFormDialog({ open, onOpenChange, eskul, users }: EskulFormD
       setError('Selesaikan atau batalkan pembuatan akun baru terlebih dahulu.')
       return
     }
+    if (logoBusy) {
+      setError('Tunggu proses logo selesai terlebih dahulu.')
+      return
+    }
     setSaving(true)
     setError(null)
     const targetId = eskul?.id ?? savedEskulId ?? uid('eskul')
     const isNew = !eskul && !savedEskulId
-    let eskulSavedInThisAttempt = false
+    let dataSavedInThisAttempt = false
     const basePayload = {
       name: form.name.trim(),
       shortName: form.shortName.trim(),
@@ -181,7 +242,7 @@ export function EskulFormDialog({ open, onOpenChange, eskul, users }: EskulFormD
       if (isNew) {
         await createEskul({ id: targetId, ...basePayload }, { notify: false })
         setSavedEskulId(targetId)
-        eskulSavedInThisAttempt = true
+        dataSavedInThisAttempt = true
       }
 
       let coachId = basePayload.coachId
@@ -217,8 +278,16 @@ export function EskulFormDialog({ open, onOpenChange, eskul, users }: EskulFormD
 
       if (!isNew) {
         await updateEskul(targetId, { ...basePayload, coachId, leaderId }, { notify: false })
+        dataSavedInThisAttempt = true
       } else if (newCoach || newLeader) {
         await updateEskul(targetId, { coachId, leaderId }, { notify: false })
+        dataSavedInThisAttempt = true
+      }
+
+      if (logoFile) {
+        await uploadEskulLogo(targetId, logoFile, { notify: false })
+      } else if (removeLogo && eskul?.logoUrl) {
+        await removeEskulLogo(targetId, { notify: false })
       }
 
       toast.success(isNew ? 'Eskul berhasil ditambahkan' : 'Data eskul diperbarui', {
@@ -230,8 +299,8 @@ export function EskulFormDialog({ open, onOpenChange, eskul, users }: EskulFormD
     } catch (submitError) {
       const message = apiErrorMessage(submitError)
       setError(
-        !eskul && (eskulSavedInThisAttempt || savedEskulId)
-          ? `${message} Eskul sudah tersimpan, silakan perbaiki data akun lalu simpan lagi.`
+        dataSavedInThisAttempt || savedEskulId
+          ? `${message} Data eskul sudah tersimpan, silakan perbaiki lalu simpan lagi.`
           : message,
       )
     } finally {
@@ -241,6 +310,8 @@ export function EskulFormDialog({ open, onOpenChange, eskul, users }: EskulFormD
 
   const userLabel = (user: User) => `${user.name}${user.eskulId ? ' (tertautan eskul lain)' : ''}`
   const persisted = Boolean(eskul || savedEskulId)
+  const previewLogoUrl = logoPreview ?? (!removeLogo ? eskul?.logoUrl : undefined)
+  const canUndoRemove = removeLogo && Boolean(eskul?.logoUrl)
 
   return (
     <Dialog
@@ -260,7 +331,7 @@ export function EskulFormDialog({ open, onOpenChange, eskul, users }: EskulFormD
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Batal
           </Button>
-          <Button type="submit" form="eskul-form" disabled={saving}>
+          <Button type="submit" form="eskul-form" disabled={saving || logoBusy}>
             {saving ? <Loader2 className="animate-spin" /> : persisted ? <Save /> : <School />}
             {persisted ? 'Simpan Perubahan' : 'Tambah Eskul'}
           </Button>
@@ -268,6 +339,99 @@ export function EskulFormDialog({ open, onOpenChange, eskul, users }: EskulFormD
       }
     >
       <form id="eskul-form" onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/20 p-3 sm:flex-row sm:items-center">
+          <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border/70 bg-white shadow-sm">
+            {previewLogoUrl ? (
+              <img
+                src={previewLogoUrl}
+                alt="Pratinjau logo eskul"
+                className="size-full object-contain p-1.5"
+              />
+            ) : (
+              <ImagePlus className="size-6 text-slate-400" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold text-foreground">
+              Logo eskul <span className="font-medium text-muted-foreground">(opsional)</span>
+            </p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+              Tampil di kartu daftar eskul, dashboard, dan header profil eskul. Format JPG, PNG,
+              atau WEBP, otomatis dikompresi sebelum disimpan.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => logoInputRef.current?.click()}
+                disabled={logoBusy || saving}
+              >
+                {logoBusy ? <Loader2 className="animate-spin" /> : <ImagePlus />}
+                {previewLogoUrl ? 'Ganti logo' : 'Pilih logo'}
+              </Button>
+              {logoFile ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (logoPreviewUrlRef.current) {
+                      URL.revokeObjectURL(logoPreviewUrlRef.current)
+                      logoPreviewUrlRef.current = null
+                    }
+                    setLogoFile(null)
+                    setLogoPreview(null)
+                    setRemoveLogo(false)
+                  }}
+                  disabled={saving}
+                >
+                  <X />
+                  Batalkan
+                </Button>
+              ) : canUndoRemove ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setRemoveLogo(false)}
+                  disabled={saving}
+                >
+                  Urungkan
+                </Button>
+              ) : eskul?.logoUrl ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-500/10"
+                  onClick={() => setRemoveLogo(true)}
+                  disabled={saving}
+                >
+                  <Trash2 />
+                  Hapus
+                </Button>
+              ) : null}
+            </div>
+            {logoFile ? (
+              <p className="mt-1.5 truncate text-[10px] text-muted-foreground">
+                {logoFile.name} · akan diunggah saat form disimpan
+              </p>
+            ) : removeLogo ? (
+              <p className="mt-1.5 text-[10px] font-medium text-rose-600 dark:text-rose-400">
+                Logo akan dihapus saat form disimpan.
+              </p>
+            ) : null}
+          </div>
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            aria-label="Pilih berkas logo eskul"
+            onChange={handleLogoChange}
+          />
+        </div>
         <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
           <Field label="Nama eskul" htmlFor="eskul-name" required>
             <Input

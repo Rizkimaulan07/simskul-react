@@ -151,9 +151,19 @@ export function EskulListPage() {
                   <div className="grid-pattern absolute inset-0 opacity-30" />
                   <div className="absolute -right-6 -top-8 size-28 rounded-full border border-white/15" />
                   <div className="relative flex items-start justify-between">
-                    <span className="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-[9px] font-extrabold uppercase tracking-[0.16em] text-white backdrop-blur">
-                      {eskul.shortName}
-                    </span>
+                    {eskul.logoUrl ? (
+                      <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/30 bg-white">
+                        <img
+                          src={eskul.logoUrl}
+                          alt={`Logo ${eskul.name}`}
+                          className="size-full scale-150 object-contain"
+                        />
+                      </span>
+                    ) : (
+                      <span className="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-[9px] font-extrabold uppercase tracking-[0.16em] text-white backdrop-blur">
+                        {eskul.shortName}
+                      </span>
+                    )}
                     <Badge variant="dark">{eskul.day}</Badge>
                   </div>
                   <div className="absolute inset-x-4 bottom-4">
