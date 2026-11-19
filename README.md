@@ -1,6 +1,6 @@
 # SIMSKUL
 
-**Sistem Informasi Manajemen Eskul** — aplikasi web fullstack untuk mengelola ekstrakurikuler sekolah: presensi, nilai, dokumentasi, surat izin kegiatan, kalender kegiatan, prestasi, data anggota, laporan, profil & keamanan akun, serta manajemen data eskul.
+**Sistem Informasi Manajemen Eskul** — aplikasi web fullstack untuk mengelola ekstrakurikuler sekolah: presensi, nilai, dokumentasi, surat izin kegiatan, kalender kegiatan, prestasi, data anggota, laporan, peringatan dini kehadiran, profil & keamanan akun, serta manajemen data eskul.
 
 Data disimpan di **PostgreSQL** (bukan lagi localStorage). Backend berupa server HTTP Node.js yang menyajikan API JSON sekaligus hasil build frontend (folder `dist/`).
 
@@ -92,6 +92,7 @@ Sistem memakai **empat peran**: `admin`, `pelatih`, `ketua`, `wakasek`.
 - Mengisi nilai eskul (keaktifan 40%, sikap 30%, keterampilan 30%) serta catatan evaluasi.
 - Mengajukan surat izin kegiatan sekaligus melengkapi isi suratnya.
 - Melihat kalender kegiatan eskul, mencatat prestasi, dan memperbarui profil/kata sandi.
+- Memantau **peringatan dini kehadiran** anggota di dashboard (alpa beruntun, kehadiran rendah, atau tidak aktif).
 
 **Ketua Eskul**
 - Melihat dashboard, sesi, anggota, dokumentasi, dan surat izin eskulnya.
@@ -118,6 +119,16 @@ Daftar presensi pada detail sesi memuat dua kelompok: **pelatih & ketua** serta 
 - Pelatih dapat mengoreksi kehadiran dirinya dan ketua. Ketua hanya dapat mengisi kehadirannya sendiri saat pelatih berhalangan.
 - Administrator tetap dapat meninjau seluruh isian, tetapi tidak dapat mengubah presensi.
 - Rekap statistik dan laporan tetap menghitung kehadiran anggota; kehadiran pelatih/ketua tersimpan sebagai data pembina pada sesi.
+
+## Peringatan dini kehadiran
+
+Dashboard pelatih menampilkan panel **Peringatan dini kehadiran** yang menandai anggota secara otomatis berdasarkan data presensi yang sudah diisi:
+
+- **Alpa beruntun** — anggota tidak hadir tanpa keterangan pada 3 sesi terakhir berturut-turut.
+- **Kehadiran rendah** — persentase hadir di bawah **75%** setelah minimal 3 catatan presensi.
+- **Tidak aktif** — tidak memiliki status hadir pada 3 sesi terakhir yang sudah diisi.
+
+Setiap peringatan menampilkan alasan, persentase kehadiran, jumlah hadir, dan prioritas. Halaman **Data Anggota** juga menampilkan badge peringatan, filter **Perlu perhatian**, serta kolom “Peringatan Dini” pada ekspor CSV. Ambang dan jumlah sesi dapat disesuaikan di `src/lib/early-warning.ts`.
 
 ## Alur delegasi presensi
 

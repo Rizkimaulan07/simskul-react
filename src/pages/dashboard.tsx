@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { AttendanceTrendChart } from '@/components/charts/attendance-trend-chart'
+import { AttendanceWarningPanel } from '@/components/shared/attendance-warning-panel'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
@@ -30,6 +31,7 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { EskulMark } from '@/components/shared/eskul-mark'
 import { StatCard } from '@/components/shared/stat-card'
 import { ACADEMIC_YEAR, ACHIEVEMENT_LEVEL_META, ACHIEVEMENT_RANK_META } from '@/lib/constants'
+import { getAttendanceWarnings } from '@/lib/early-warning'
 import { useAppStore, useCurrentUser } from '@/lib/store'
 import {
   getAllAttendance,
@@ -431,6 +433,14 @@ export function DashboardPage() {
     .filter((item) => item.stats.total > 0)
     .sort((a, b) => a.stats.rate - b.stats.rate)
     .slice(0, 3)
+  const attendanceWarnings =
+    user.role === 'pelatih' && user.eskulId
+      ? getAttendanceWarnings({
+          students: store.students,
+          sessions: store.sessions,
+          eskulId: user.eskulId,
+        })
+      : []
   const primarySessionId =
     user.role === 'ketua'
       ? delegatedSessions[0]?.id ?? todaySession?.id
@@ -727,6 +737,8 @@ export function DashboardPage() {
               accent="amber"
             />
           </div>
+
+          <AttendanceWarningPanel warnings={attendanceWarnings} />
 
           <div className="grid gap-4 xl:grid-cols-3">
             <div className="space-y-4 xl:col-span-2">

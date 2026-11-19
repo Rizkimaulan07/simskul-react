@@ -24,13 +24,14 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { Field } from '@/components/shared/field'
 import { PageHeader } from '@/components/shared/page-header'
 import { StatCard } from '@/components/shared/stat-card'
+import { getAttendanceWarnings, type AttendanceWarning } from '@/lib/early-warning'
 import { canManageMembers } from '@/lib/permissions'
 import { useAppStore, useCurrentUser } from '@/lib/store'
 import { getStudentAttendance } from '@/lib/selectors'
 import type { Gender } from '@/lib/types'
 import { cn, downloadCSV, percentage } from '@/lib/utils'
 
-type MemberFilter = 'semua' | 'aktif' | 'nonaktif'
+type MemberFilter = 'semua' | 'aktif' | 'nonaktif' | 'perhatian'
 
 export function MembersPage() {
   const user = useCurrentUser()
@@ -54,6 +55,14 @@ export function MembersPage() {
     .sort((a, b) => a.name.localeCompare(b.name))
   const activeMembers = allMembers.filter((student) => student.active)
   const canManage = canManageMembers(user)
+  const attendanceWarnings = getAttendanceWarnings({
+    students: allMembers,
+    sessions: store.sessions,
+    eskulId: user.eskulId,
+  })
+  const warningByStudent = new Map<string, AttendanceWarning>(
+    attendanceWarnings.map((warning) => [warning.student.id, warning]),
+  )
 
   const enriched = allMembers.map((student) => ({
     student,
@@ -62,6 +71,7 @@ export function MembersPage() {
   const filtered = enriched.filter(({ student }) => {
     if (memberFilter === 'aktif' && !student.active) return false
     if (memberFilter === 'nonaktif' && student.active) return false
+    if (memberFilter === 'perhatian' && !warningByStudent.has(student.id)) return false
     if (classFilter !== 'semua' && student.className !== classFilter) return false
     if (!search.trim()) return true
     const query = search.toLowerCase()
@@ -77,30 +87,45 @@ export function MembersPage() {
       const stats = getStudentAttendance(store.sessions, student.id)
       acc.hadir += stats.hadir
       acc.total += stats.total
-      if (stats.total > 0 && stats.rate < 75) acc.attention += 1
       return acc
     },
-    { hadir: 0, total: 0, attention: 0 },
+    { hadir: 0, total: 0 },
   )
   const averageRate = percentage(totalEntries.hadir, totalEntries.total)
   const classOptions = Array.from(new Set(allMembers.map((student) => student.className))).sort()
 
   const handleExport = () => {
-    const rows = filtered.map(({ student, stats }) => [
-      student.name,
-      student.nis,
-      student.className,
-      student.gender === 'L' ? 'Laki-laki' : 'Perempuan',
-      student.active ? 'Aktif' : 'Nonaktif',
-      stats.hadir,
-      stats.izin,
-      stats.sakit,
-      stats.alpa,
-      `${stats.rate}%`,
-    ])
+    const rows = filtered.map(({ student, stats }) => {
+      const warning = warningByStudent.get(student.id)
+      return [
+        student.name,
+        student.nis,
+        student.className,
+        student.gender === 'L' ? 'Laki-laki' : 'Perempuan',
+        student.active ? 'Aktif' : 'Nonaktif',
+        warning ? warning.reasons.map((reason) => reason.label).join('; ') : '-',
+        stats.hadir,
+        stats.izin,
+        stats.sakit,
+        stats.alpa,
+        `${stats.rate}%`,
+      ]
+    })
     downloadCSV(
       `anggota-${eskul?.name.toLowerCase().replaceAll(' ', '-') ?? 'eskul'}.csv`,
-      ['Nama', 'NIS', 'Kelas', 'Gender', 'Status', 'Hadir', 'Izin', 'Sakit', 'Alpa', 'Kehadiran'],
+      [
+        'Nama',
+        'NIS',
+        'Kelas',
+        'Gender',
+        'Status',
+        'Peringatan Dini',
+        'Hadir',
+        'Izin',
+        'Sakit',
+        'Alpa',
+        'Kehadiran',
+      ],
       rows,
     )
     toast.success('Data anggota diekspor ke CSV')
@@ -183,9 +208,9 @@ export function MembersPage() {
         />
         <StatCard
           label="Perlu perhatian"
-          value={totalEntries.attention}
+          value={attendanceWarnings.length}
           icon={AlertTriangle}
-          hint="Kehadiran di bawah 75%"
+          hint="Alpa beruntun / kehadiran rendah"
           accent="amber"
         />
       </div>
@@ -203,6 +228,11 @@ export function MembersPage() {
                   value: 'nonaktif',
                   label: 'Nonaktif',
                   count: allMembers.length - activeMembers.length,
+                },
+                {
+                  value: 'perhatian',
+                  label: 'Perlu perhatian',
+                  count: attendanceWarnings.length,
                 },
               ]}
             />
@@ -266,94 +296,115 @@ export function MembersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map(({ student, stats }) => (
-                  <TableRow key={student.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2.5">
-                        <Avatar name={student.name} id={student.id} size="sm" />
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-bold text-foreground">
-                            {student.name}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground">
-                            NIS {student.nis} · {student.gender === 'L' ? 'Laki-laki' : 'Perempuan'}
-                          </p>
+                {filtered.map(({ student, stats }) => {
+                  const warning = warningByStudent.get(student.id)
+                  return (
+                    <TableRow key={student.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={student.name} id={student.id} size="sm" />
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-bold text-foreground">
+                              {student.name}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              NIS {student.nis} ·{' '}
+                              {student.gender === 'L' ? 'Laki-laki' : 'Perempuan'}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs font-medium text-foreground">{student.className}</span>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      {stats.total > 0 ? (
-                        <div className="w-40">
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-muted-foreground">
-                              {stats.hadir}/{stats.total} hadir
-                            </span>
-                            <span
-                              className={cn(
-                                'font-bold',
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs font-medium text-foreground">
+                          {student.className}
+                        </span>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {stats.total > 0 ? (
+                          <div className="w-40">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-muted-foreground">
+                                {stats.hadir}/{stats.total} hadir
+                              </span>
+                              <span
+                                className={cn(
+                                  'font-bold',
+                                  stats.rate >= 90
+                                    ? 'text-emerald-600'
+                                    : stats.rate >= 75
+                                      ? 'text-amber-600'
+                                      : 'text-rose-600',
+                                )}
+                              >
+                                {stats.rate}%
+                              </span>
+                            </div>
+                            <Progress
+                              value={stats.rate}
+                              className="mt-1 h-1.5"
+                              indicatorClassName={
                                 stats.rate >= 90
-                                  ? 'text-emerald-600'
+                                  ? 'bg-emerald-500'
                                   : stats.rate >= 75
-                                    ? 'text-amber-600'
-                                    : 'text-rose-600',
+                                    ? 'bg-amber-500'
+                                    : 'bg-rose-500'
+                              }
+                            />
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground">Belum ada data</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge variant={student.active ? 'default' : 'secondary'}>
+                            {student.active ? 'Aktif' : 'Nonaktif'}
+                          </Badge>
+                          {warning ? (
+                            <Badge
+                              variant={warning.severity === 'kritis' ? 'danger' : 'warning'}
+                              className="max-w-44 truncate"
+                              title={warning.reasons.map((reason) => reason.detail).join(' ')}
+                            >
+                              <AlertTriangle className="size-2.5 shrink-0" />
+                              {warning.reasons[0].label}
+                              {warning.reasons.length > 1
+                                ? ` +${warning.reasons.length - 1}`
+                                : ''}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {canManage ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="iconSm"
+                              onClick={() =>
+                                handleToggleActive(student.id, student.name, student.active)
+                              }
+                              title={student.active ? 'Nonaktifkan anggota' : 'Aktifkan anggota'}
+                              aria-label={
+                                student.active ? 'Nonaktifkan anggota' : 'Aktifkan anggota'
+                              }
+                              className={cn(
+                                'text-muted-foreground',
+                                student.active
+                                  ? 'hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10'
+                                  : 'hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-500/10',
                               )}
                             >
-                              {stats.rate}%
-                            </span>
+                              {student.active ? <UserX /> : <UserCheck />}
+                            </Button>
                           </div>
-                          <Progress
-                            value={stats.rate}
-                            className="mt-1 h-1.5"
-                            indicatorClassName={
-                              stats.rate >= 90
-                                ? 'bg-emerald-500'
-                                : stats.rate >= 75
-                                  ? 'bg-amber-500'
-                                  : 'bg-rose-500'
-                            }
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-[11px] text-muted-foreground">Belum ada data</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={student.active ? 'default' : 'secondary'}>
-                        {student.active ? 'Aktif' : 'Nonaktif'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {canManage ? (
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="iconSm"
-                            onClick={() =>
-                              handleToggleActive(student.id, student.name, student.active)
-                            }
-                            title={student.active ? 'Nonaktifkan anggota' : 'Aktifkan anggota'}
-                            aria-label={
-                              student.active ? 'Nonaktifkan anggota' : 'Aktifkan anggota'
-                            }
-                            className={cn(
-                              'text-muted-foreground',
-                              student.active
-                                ? 'hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10'
-                                : 'hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-500/10',
-                            )}
-                          >
-                            {student.active ? <UserX /> : <UserCheck />}
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
             <div className="border-t border-border/60 px-4 py-3 text-[10px] text-muted-foreground">
