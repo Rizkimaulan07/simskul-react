@@ -1,0 +1,23 @@
+# Blueprint Render — satu web service gratis yang menyajikan API + frontend.
+# Database PostgreSQL memakai Neon (gratis) agar tidak terkena batas 30 hari
+# Render Postgres Free. Panduan lengkap ada di DEPLOY.md.
+services:
+  - type: web
+    name: simskul
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: SIMSKUL_COOKIE_SECURE
+        value: "1"
+      - key: DATABASE_URL
+        sync: false
+      - key: SIMSKUL_ADMIN_PASSWORD
+        sync: false
+      - key: SIMSKUL_DEMO_PASSWORD
+        sync: false

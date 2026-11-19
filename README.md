@@ -51,6 +51,16 @@ npm run build    # type-check + build frontend ke dist/
 npm run start    # server Node menyajikan API + dist pada :3001
 ```
 
+## Deploy gratis
+
+Panduan langkah demi langkah tersedia di **[DEPLOY.md](DEPLOY.md)**. Ringkasnya:
+
+1. Buat database PostgreSQL gratis di **Neon** (region Singapore).
+2. Deploy repository ini ke **Render** memakai Blueprint [`render.yaml`](render.yaml) — plan Free, tanpa kartu kredit.
+3. Isi `DATABASE_URL` serta kata sandi admin/demo, lalu buka URL `*.onrender.com`.
+
+Tersedia juga [`Dockerfile`](Dockerfile) untuk host gratis berbasis Docker seperti Koyeb atau Hugging Face Spaces.
+
 Perintah lain:
 
 ```bash
