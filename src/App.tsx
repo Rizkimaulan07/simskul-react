@@ -4,6 +4,7 @@ import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
 import { AppShell } from '@/components/layout/app-shell'
 import { Logo } from '@/components/shared/brand'
 import { Button } from '@/components/ui/button'
+import { isDemoMode } from '@/lib/api'
 import { useAppStore, useCurrentUser } from '@/lib/store'
 import type { Role } from '@/lib/types'
 import { LoginPage } from '@/pages/login'
@@ -327,6 +328,11 @@ export default function App() {
       <BootGate>
         <AppRoutes />
       </BootGate>
+      {isDemoMode ? (
+        <div className="pointer-events-none fixed bottom-3 right-3 z-[100] max-w-[calc(100vw-1.5rem)] truncate rounded-full bg-amber-500 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-lg">
+          Demo · tidak tersimpan
+        </div>
+      ) : null}
     </HashRouter>
   )
 }

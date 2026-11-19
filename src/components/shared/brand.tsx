@@ -24,7 +24,7 @@ export function Logo({
   return (
     <div className={cn('flex items-center gap-3', className)}>
       <img
-        src="/brand/logo.png"
+        src={`${import.meta.env.BASE_URL}brand/logo.png`}
         alt="Logo SMK BPPI"
         className={cn(
           'shrink-0 select-none object-contain drop-shadow-sm',

@@ -43,7 +43,7 @@ export function LetterPaper({
 
       <header className="relative flex items-center gap-5 border-b-[3px] border-double border-slate-900 pb-4">
         <img
-          src="/brand/smk-bppi-logo.png"
+          src={`${import.meta.env.BASE_URL}brand/smk-bppi-logo.png`}
           alt="Logo SMK BPPI"
           className="size-[82px] shrink-0 object-contain"
           draggable={false}

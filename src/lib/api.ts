@@ -1,12 +1,9 @@
-export class ApiError extends Error {
-  status: number
+import { ApiError } from './api-error'
 
-  constructor(message: string, status: number) {
-    super(message)
-    this.name = 'ApiError'
-    this.status = status
-  }
-}
+export { ApiError } from './api-error'
+
+/** Demo statis untuk GitHub Pages: API diganti data contoh di browser. */
+export const isDemoMode = import.meta.env.VITE_DEMO_MODE === '1'
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -31,6 +28,11 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  if (isDemoMode) {
+    const { demoRequest } = await import('./demo-api')
+    return demoRequest<T>(path, options.method ?? 'GET', options.body)
+  }
+
   const headers: Record<string, string> = {
     Accept: 'application/json',
   }
@@ -57,6 +59,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 async function requestUpload<T>(path: string, form: FormData): Promise<T> {
+  if (isDemoMode) {
+    const { demoUpload } = await import('./demo-api')
+    return demoUpload<T>(path, form)
+  }
+
   let response: Response
   try {
     response = await fetch(`/api${path}`, {

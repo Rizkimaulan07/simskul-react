@@ -51,6 +51,29 @@ npm run build    # type-check + build frontend ke dist/
 npm run start    # server Node menyajikan API + dist pada :3001
 ```
 
+## Preview di HP lewat GitHub Pages
+
+Kalau tujuanmu baru **melihat tampilan di HP sebelum hosting sungguhan**, repo ini punya mode demo statis di GitHub Pages. Data contoh dimuat langsung di browser, jadi tidak perlu server atau PostgreSQL.
+
+1. Buka **Settings → Pages** repo ini:  
+   <https://github.com/Rizkimaulan07/simskul-react/settings/pages>  
+   Pada **Source**, pilih **GitHub Actions**, lalu **Save**.
+2. Buka tab **Actions → Deploy demo ke GitHub Pages → Run workflow**:  
+   <https://github.com/Rizkimaulan07/simskul-react/actions/workflows/demo-pages.yml>
+3. Setelah selesai, buka di HP:  
+   <https://rizkimaulan07.github.io/simskul-react/>
+
+Login cepat di mode demo:
+
+- Admin: `admin@simskul.sch.id` / `admin123`
+- Pelatih: `budi@simskul.sch.id` / `simskul123`
+- Ketua: `rani@simskul.sch.id` / `simskul123`
+- Wakasek: `wakasek@simskul.sch.id` / `simskul123`
+
+Jika workflow pertama selesai dengan pesan “GitHub Pages belum aktif”, aktifkan dulu Settings → Pages seperti langkah 1, lalu buka Actions → **Deploy demo ke GitHub Pages** → **Run workflow** sekali lagi.
+
+Perubahan pada mode demo **tidak tersimpan permanen** dan tidak masuk ke database. Untuk aplikasi sungguhan dengan login, presensi, dan data bersama, gunakan deploy Render + Neon di bawah.
+
 ## Deploy gratis
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Rizkimaulan07/simskul-react)

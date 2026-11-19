@@ -26,7 +26,7 @@ import { Input } from '@/components/ui/input'
 import { Logo } from '@/components/shared/brand'
 import { Field } from '@/components/shared/field'
 import { useTheme } from '@/hooks/use-theme'
-import { apiErrorMessage } from '@/lib/api'
+import { apiErrorMessage, isDemoMode } from '@/lib/api'
 import { ACADEMIC_YEAR, SCHOOL_NAME } from '@/lib/constants'
 import { useAppStore, useCurrentUser } from '@/lib/store'
 import type { Role } from '@/lib/types'
@@ -268,8 +268,9 @@ export function LoginPage() {
               Selamat datang kembali
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Gunakan email dan kata sandi akun Anda. Data kini tersimpan di database server,
-              bukan lagi di peramban.
+              {isDemoMode
+                ? 'Mode demo dengan data contoh di browser. Perubahan tidak tersimpan permanen.'
+                : 'Gunakan email dan kata sandi akun Anda. Data tersimpan di database server.'}
             </p>
           </div>
 
