@@ -519,7 +519,7 @@ export function DashboardPage() {
           ) : null}
 
           <div className="grid gap-4 xl:grid-cols-3">
-            <div className="space-y-4 xl:col-span-2">
+            <div className="min-w-0 space-y-4 xl:col-span-2">
               <Card>
                 <CardHeader className="flex-row items-start justify-between space-y-0">
                   <div>
@@ -620,7 +620,7 @@ export function DashboardPage() {
               </Card>
             </div>
 
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               <Card>
                 <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm">Menunggu persetujuan</CardTitle>
@@ -741,7 +741,7 @@ export function DashboardPage() {
           <AttendanceWarningPanel warnings={attendanceWarnings} />
 
           <div className="grid gap-4 xl:grid-cols-3">
-            <div className="space-y-4 xl:col-span-2">
+            <div className="min-w-0 space-y-4 xl:col-span-2">
               <Card>
                 <CardHeader className="flex-row items-start justify-between space-y-0">
                   <div>
@@ -844,7 +844,7 @@ export function DashboardPage() {
               </Card>
             </div>
 
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               {nextSession ? (
                 <NextSessionCard
                   session={nextSession}

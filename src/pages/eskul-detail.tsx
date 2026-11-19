@@ -210,7 +210,7 @@ export function EskulDetailPage() {
 
       {tab === 'ringkasan' ? (
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="space-y-4 lg:col-span-2">
+          <div className="min-w-0 space-y-4 lg:col-span-2">
             <Card>
               <CardHeader className="flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-sm">Informasi Eskul</CardTitle>
@@ -324,7 +324,7 @@ export function EskulDetailPage() {
             </Card>
           </div>
 
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Rekap Kehadiran</CardTitle>

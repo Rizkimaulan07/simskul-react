@@ -329,8 +329,12 @@ export default function App() {
         <AppRoutes />
       </BootGate>
       {isDemoMode ? (
-        <div className="pointer-events-none fixed bottom-3 right-3 z-[100] max-w-[calc(100vw-1.5rem)] truncate rounded-full bg-amber-500 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-lg">
-          Demo · tidak tersimpan
+        <div
+          className="pointer-events-none fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] right-3 z-[100] max-w-[calc(100vw-1.5rem)] truncate rounded-full bg-amber-500/95 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide text-white shadow-lg sm:px-3 sm:text-[10px]"
+          title="Mode demo: perubahan tidak tersimpan permanen"
+        >
+          <span className="sm:hidden">Demo</span>
+          <span className="hidden sm:inline">Demo · tidak tersimpan</span>
         </div>
       ) : null}
     </HashRouter>

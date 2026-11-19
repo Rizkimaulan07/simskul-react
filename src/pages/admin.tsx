@@ -274,7 +274,7 @@ export function AdminPage() {
         title="Manajemen Pengguna"
         description="Kelola akun, peran, dan hak akses pengguna SIMSKUL. Semua perubahan langsung disimpan ke database."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button onClick={openAdd}>
               <UserPlus />
               Tambah Pengguna

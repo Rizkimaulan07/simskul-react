@@ -18,7 +18,7 @@ export function Tabs({ items, value, onValueChange, className, fullWidth }: Tabs
   return (
     <div
       className={cn(
-        'no-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-border/70 bg-muted/45 p-1',
+        'no-scrollbar flex max-w-full flex-wrap items-center gap-1 overflow-x-auto rounded-xl border border-border/70 bg-muted/45 p-1 sm:flex-nowrap',
         fullWidth ? 'flex w-full' : 'w-fit',
         className,
       )}
@@ -34,7 +34,7 @@ export function Tabs({ items, value, onValueChange, className, fullWidth }: Tabs
             aria-selected={active}
             onClick={() => onValueChange(item.value)}
             className={cn(
-              'inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-muted-foreground transition-all hover:text-foreground',
+              'inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-muted-foreground transition-all hover:text-foreground sm:px-3 sm:text-xs',
               fullWidth ? 'flex-1' : 'shrink-0',
               active && 'bg-card text-foreground shadow-sm ring-1 ring-border/70',
             )}
