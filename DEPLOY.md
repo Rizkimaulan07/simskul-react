@@ -47,6 +47,8 @@ Perkiraan waktu: **10–15 menit** (sebagian besar menunggu build pertama).
 
 ### Cara termudah: Blueprint
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Rizkimaulan07/simskul-react)
+
 1. Buka <https://dashboard.render.com/register>, daftar dengan GitHub (gratis, tanpa kartu kredit).
 2. Buka <https://dashboard.render.com/blueprints> → **New Blueprint Instance**.
 3. Hubungkan akun GitHub, lalu pilih repository:

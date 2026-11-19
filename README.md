@@ -53,10 +53,12 @@ npm run start    # server Node menyajikan API + dist pada :3001
 
 ## Deploy gratis
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Rizkimaulan07/simskul-react)
+
 Panduan langkah demi langkah tersedia di **[DEPLOY.md](DEPLOY.md)**. Ringkasnya:
 
 1. Buat database PostgreSQL gratis di **Neon** (region Singapore).
-2. Deploy repository ini ke **Render** memakai Blueprint [`render.yaml`](render.yaml) — plan Free, tanpa kartu kredit.
+2. Deploy repository ini ke **Render** memakai Blueprint [`render.yaml`](render.yaml) — plan Free, tanpa kartu kredit. Tombol di atas langsung membuka alur deploy-nya.
 3. Isi `DATABASE_URL` serta kata sandi admin/demo, lalu buka URL `*.onrender.com`.
 
 Tersedia juga [`Dockerfile`](Dockerfile) untuk host gratis berbasis Docker seperti Koyeb atau Hugging Face Spaces.
